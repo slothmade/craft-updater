@@ -44,7 +44,7 @@ That's it. Nothing is installed on your PC except the Craft updates you approve.
 Craft Updater is not the only option. As of November 2026 there are, for example:
 
 - **The built-in update of each Craft app** (official) – every app can update itself; on Windows it checks the checksum and that the new installer is signed by the same publisher as the installed app.
-- **[ArtCraft Launcher](https://github.com/storytold/craft-launcher)** (official, early alpha) – installs, updates and opens all Craft apps on Windows, macOS and Linux.
+- **[ArtCraft Launcher](https://github.com/storytold/craft-launcher)** (official, in early alpha according to its README) – installs, updates, opens and removes all Craft apps, can go back to older versions and shows release notes, on Windows, macOS, Linux and FreeBSD.
 - **[Craft Apps Manager](https://github.com/CryptoKey98/craft-apps-manager)** (community) – installs, updates, rolls back and builds Craft apps, with many options.
 - **[ArtCraft Suite Updater](https://github.com/Lyraedan/ArtCraft-Suit-Updater)** (community) – a desktop app that lists, downloads and installs the Craft apps on Windows, macOS and Linux.
 - **[StoryTold Installer](https://github.com/liviobelegante/StoryTold-Installer)** (community) – installs selected Craft apps from their official installers on Windows and can build some of them from source.
@@ -55,7 +55,7 @@ All of them are fine choices, and several offer more features than Craft Updater
 
 ### What Craft Updater does differently
 
-Craft Updater is deliberately small. It only updates apps you already have, and it puts every installer through more checks than we found in any of the Craft tools above. We read the public source code of each of them on 4 November 2026; winget is a general package manager and not part of this comparison. Craft Updater checks:
+Craft Updater is deliberately small. It only updates apps you already have, and it puts every installer through a few more checks than we found in the other Craft tools when we read their public source code in November 2026 (winget is a general package manager and not part of this comparison). These tools keep improving, so this may change. Craft Updater checks:
 
 - SHA-256 checksum **and** Windows code signature **and** publisher – plus the exact certificate profile (EKU) and the certificate issuer
 - MSI contents compared with the release: product name, version, manufacturer and processor architecture
@@ -63,9 +63,8 @@ Craft Updater is deliberately small. It only updates apps you already have, and 
 - all checks run again right before installing, and the file stays locked until Windows Installer has finished
 - **one** failed security check stops the **whole** run – nothing is installed
 - nothing is installed without your *Install* + *Yes*
-- no hidden or encoded PowerShell – virus scanners treat these patterns as suspicious
 
-Why the signature check matters: the SHA-256 checksum comes from the same GitHub release as the file. If a release were ever tampered with, the checksum would match the tampered file too. The code signature with the expected publisher and certificate profile is an independent second lock.
+Why the signature check matters: a SHA-256 checksum is published together with the file, or copied from the same release. If a release were ever tampered with, the checksum could match the tampered file too. The code signature with the expected publisher and certificate profile is an independent second lock. The ArtCraft team is already tracking such a publisher check for its launcher on Windows and Linux ([craft-launcher#769](https://github.com/storytold/craft-launcher/issues/769)).
 
 ### Craft Updater or ArtCraft Launcher?
 
@@ -82,7 +81,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Shows what's new | yes | yes |
 | New Craft apps | added with a Craft Updater release | added by the ArtCraft team, also community apps |
 | Languages | German, English | many |
-| Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission |
+| Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission; a publisher check is tracked in [#769](https://github.com/storytold/craft-launcher/issues/769) |
 | Needs to be installed itself | no (portable folder) | yes (signed installer) |
 | Signed program, updates itself | no – it tells you about a new version, you download it yourself | yes, and checks that its own update is signed by the same publisher |
 
