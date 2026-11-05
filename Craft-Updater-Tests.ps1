@@ -582,6 +582,12 @@ try {
         ($UpdaterText -match [regex]::Escape("`$footerLink.Add_LinkClicked({ [void](Open-ProjectPage) })")) -and
         ($UpdaterText -match [regex]::Escape("Join-Path `$env:SystemRoot 'explorer.exe') -ArgumentList `$ProjectUrl"))
     }
+    Test-Case 'Launcher is plain ASCII without BOM (a BOM breaks the first line of a .cmd)' {
+        $launcherPath = Join-Path (Split-Path -Parent $UpdaterPath) 'Craft-Updater-STARTEN.cmd'
+        $bytes = [IO.File]::ReadAllBytes($launcherPath)
+        ($bytes.Length -gt 3) -and -not ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) -and
+        (@($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) -and ([Text.Encoding]::ASCII.GetString($bytes,0,9) -eq '@echo off')
+    }
     Test-Case 'Window title and header show the version with v' {
         ($UpdaterText -match [regex]::Escape("`$form.Text = 'Craft Updater v' + `$UpdaterVersion")) -and ($UpdaterText -match [regex]::Escape("`$titleVersion.Text = 'v' + `$UpdaterVersion"))
     }

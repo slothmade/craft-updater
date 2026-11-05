@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 rem Craft Updater launcher: asks Windows for administrator rights, then starts the updater.
 rem Messages are shown in English and German (Deutsch).
 setlocal
