@@ -84,7 +84,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Languages | German, English | many |
 | Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission |
 | Needs to be installed itself | no (portable folder) | yes (signed installer) |
-| Signed program, updates itself | not yet (planned) | yes, and checks that its own update is signed by the same publisher |
+| Signed program, updates itself | no – it tells you about a new version, you download it yourself | yes, and checks that its own update is signed by the same publisher |
 
 **Choose Craft Updater** if you prefer one simple window that does just one thing: show what's new and update the Craft apps you already have on Windows after careful checks – with one clear approval and a report you can share.
 
@@ -96,10 +96,10 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 No. It is an independent hobby project. It only uses the public releases of the Craft apps.
 
 **My virus scanner warns about it. What now?**
-Please do **not** turn off your virus scanner. First check that your download is genuine (see the next question). Then report the false positive to your antivirus vendor and open an [issue](../../issues/new/choose) with the scanner's name and detection name. PowerShell scripts that ask for administrator rights are sometimes flagged by heuristics. A signed version is planned to make this rare.
+Please do **not** turn off your virus scanner. First check that your download is genuine (see the next question). Then report the false positive to your antivirus vendor and open an [issue](../../issues/new/choose) with the scanner's name and detection name. PowerShell scripts that ask for administrator rights are sometimes flagged by heuristics, especially when they are not code-signed (see [Code signing](#code-signing-policy)).
 
 **Windows says "Smart App Control blocked a file that may be unsafe". What now?**
-Smart App Control (Windows 11) blocks every unsigned script that was downloaded from the internet, and it has no "Run anyway" button. If you trust this download (check it as described in the next question), remove the internet mark from the ZIP **before** extracting it: delete the already extracted folder, right-click `Craft-Updater-v5.8.1-Portable.zip` → **Properties** → tick **Unblock** at the bottom → **OK**, then extract it again and start `Craft-Updater-STARTEN.cmd`. Please do not turn Smart App Control off. A signed version is planned to make this step unnecessary.
+Smart App Control (Windows 11) blocks every unsigned script that was downloaded from the internet, and it has no "Run anyway" button. If you trust this download (check it as described in the next question), remove the internet mark from the ZIP **before** extracting it: delete the already extracted folder, right-click `Craft-Updater-v5.8.1-Portable.zip` → **Properties** → tick **Unblock** at the bottom → **OK**, then extract it again and start `Craft-Updater-STARTEN.cmd`. Please do not turn Smart App Control off. Craft Updater is not code-signed, so this step stays necessary.
 
 **How do I check that my download is genuine?**
 Every release has a file `SHA256SUMS`. In PowerShell, run `Get-FileHash .\Craft-Updater-v5.8.1-Portable.zip -Algorithm SHA256`. The result must be exactly the value in `SHA256SUMS`.
@@ -174,15 +174,12 @@ Design rules for every change:
 
 ## Code signing policy
 
-*Planned.* Releases are meant to be signed through the [SignPath Foundation](https://signpath.org) once the project is accepted. Until then, releases are unsigned; use `SHA256SUMS` to verify them.
+Craft Updater is a hobby project and is **not code-signed**, and there are no plans to change that. This is why Windows Smart App Control and some virus scanners are more cautious with it (see the [FAQ](#faq)).
 
-- Committers and reviewers: [@slothmade](https://github.com/slothmade)
-- Approvers: [@slothmade](https://github.com/slothmade)
+Instead, every release is built on GitHub's own machines from the public code in this repository, after all tests have passed, and comes with a `SHA256SUMS` file. Check your download as described in the FAQ.
+
+- Committers, reviewers and release approval: [@slothmade](https://github.com/slothmade)
 - Privacy: see [Privacy](#privacy) above.
-
-<!-- Add once signing is active (required wording, with both links):
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
--->
 
 ## License
 

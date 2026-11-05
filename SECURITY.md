@@ -50,7 +50,7 @@ Be aware of what these checks cannot do:
 
 - **A compromised publisher.** If the Craft developers' own signing key were stolen and used to sign a malicious release, that release would pass the checks. Craft Updater trusts what the publisher signs.
 - **Malware that is already on your PC** with administrator rights can change anything, including this updater.
-- **Changes to the updater's own files.** Craft Updater runs from the folder you extracted it to. Anyone who can write to that folder can change the script. Keep it in your own user folder, and download it only from this repository's releases. A signed `.exe` is planned to remove this weak spot.
+- **Changes to the updater's own files.** Craft Updater runs from the folder you extracted it to. Anyone who can write to that folder can change the script. Keep it in your own user folder, and download it only from this repository's releases. Craft Updater is not code-signed, so Windows cannot detect such a change for you; if in doubt, delete the folder and download it again.
 
 ## Verifying your download
 

@@ -114,7 +114,7 @@ jobs:
           $notes.Add("Get-FileHash .\$folder.zip -Algorithm SHA256")
           $notes.Add('```')
           $notes.Add('')
-          $notes.Add('Code signing policy and privacy: see the [README](https://github.com/' + $env:GH_REPO + '#code-signing-policy).')
+          $notes.Add('Craft Updater is not code-signed; please verify the download as shown above. Privacy: see the [README](https://github.com/' + $env:GH_REPO + '#privacy).')
           [IO.File]::WriteAllLines((Join-Path $pwd 'release-notes.md'), $notes, [Text.UTF8Encoding]::new($false))
 
       - name: Create the draft release
