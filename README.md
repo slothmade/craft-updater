@@ -74,6 +74,9 @@ No. It is an independent hobby project. It only uses the public releases of the 
 **My virus scanner warns about it. What now?**
 Please do **not** turn off your virus scanner. First check that your download is genuine (see the next question). Then report the false positive to your antivirus vendor and open an [issue](../../issues/new/choose) with the scanner's name and detection name. PowerShell scripts that ask for administrator rights are sometimes flagged by heuristics. A signed version is planned to make this rare.
 
+**Windows says "Smart App Control blocked a file that may be unsafe". What now?**
+Smart App Control (Windows 11) blocks every unsigned script that was downloaded from the internet, and it has no "Run anyway" button. If you trust this download (check it as described in the next question), remove the internet mark from the ZIP **before** extracting it: delete the already extracted folder, right-click `Craft-Updater-v5.8-Portable.zip` → **Properties** → tick **Unblock** at the bottom → **OK**, then extract it again and start `Craft-Updater-STARTEN.cmd`. Please do not turn Smart App Control off. A signed version is planned to make this step unnecessary.
+
 **How do I check that my download is genuine?**
 Every release has a file `SHA256SUMS`. In PowerShell, run `Get-FileHash .\Craft-Updater-v5.8-Portable.zip -Algorithm SHA256`. The result must be exactly the value in `SHA256SUMS`.
 
