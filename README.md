@@ -86,7 +86,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Needs to be installed itself | no (portable folder) | yes (signed installer) |
 | Signed program, updates itself | not yet (planned) | yes, and checks that its own update is signed by the same publisher |
 
-**Choose Craft Updater** if you are on Windows, already have your Craft apps and want every update checked very carefully before anything is installed – with one clear approval and a report you can share.
+**Choose Craft Updater** if you prefer one simple window that does just one thing: show what's new and update the Craft apps you already have on Windows after careful checks – with one clear approval and a report you can share.
 
 **Choose the ArtCraft Launcher** if you want everything in one place – installing, updating, opening, removing and going back to older versions – on any system, from the people who make the Craft apps. Both can be used side by side.
 
