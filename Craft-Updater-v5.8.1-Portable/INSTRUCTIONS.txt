@@ -49,7 +49,9 @@ HELP AND REMOVAL
   (button "Open error report" in the window). You can share it
   (your user name and computer name are removed from it).
   On a security error nothing is installed. Please do not force anything.
-- New version: download it from https://github.com/slothmade/craft-updater/releases,
+- New version: if there is one, the window says "New Craft Updater version
+  ... available" at the bottom right (a click opens the download page).
+  Download it from https://github.com/slothmade/craft-updater/releases,
   delete the old folder, extract the new ZIP.
 - Removal (your Craft programs stay installed). Delete:
     1. your Craft Updater folder

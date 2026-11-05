@@ -73,6 +73,10 @@ function L([string]$de,[string]$en) {
 $UpdaterVersion = '5.8.1'
 # Project page (shown small at the bottom of the window).
 $ProjectUrl = 'https://github.com/slothmade/craft-updater'
+# Own releases: only used for the notice "new Craft Updater version available".
+# Nothing is downloaded or installed automatically (an unsigned script must not replace itself).
+$UpdaterOwner = 'slothmade'
+$UpdaterRepo = 'craft-updater'
 $ScriptPath = $PSCommandPath
 $ScriptDirectory = Split-Path -Parent $PSCommandPath
 $Owner = 'storytold'
@@ -107,7 +111,7 @@ $TimeoutSeconds = 120
 $InstallTimeoutSeconds = 1800
 $MinReserveBytes = 500MB
 # 60 minutes: new releases are detected after one hour at the latest.
-# 14 API requests per run stay far below the GitHub limit (60 per hour).
+# 15 API requests per run (14 programs + this updater) stay far below the GitHub limit (60 per hour).
 $CacheTtlMinutes = 60
 $Headers = @{'User-Agent'=('Craft-Updater-v' + $UpdaterVersion);'Accept'='application/vnd.github+json'}
 
@@ -188,6 +192,7 @@ $State = @{
     InstallerFailures  = 0
     ErrorFolderReady   = $false
     ExitCode           = 0
+    UpdaterUpdate      = $null   # newer Craft Updater on GitHub (notice only)
 }
 # Also collect every warning so it ends up in the error report (nothing to copy from the console).
 function Write-Warning {
@@ -477,9 +482,11 @@ function Invoke-Retry([string]$uri,[string]$outFile='') {
         }
     }
 }
-function Get-ReleaseCached([string]$repo) {
-    if ($repo -notmatch '^[a-z0-9-]+$') { throw (L 'Ungueltiger Repository-Name' 'Invalid repository name') }
-    $cacheFile = Join-Path $CacheRoot ($repo + '.json')
+function Get-ReleaseCached([string]$repo,[string]$owner=$Owner) {
+    if ($repo -notmatch '^[a-z0-9-]+$' -or $owner -notmatch '^[A-Za-z0-9-]+$') { throw (L 'Ungueltiger Repository-Name' 'Invalid repository name') }
+    # Craft programs keep their old cache names; other owners get their own prefix.
+    $cacheName = $(if ($owner -eq $Owner) { $repo } else { $owner + '--' + $repo })
+    $cacheFile = Join-Path $CacheRoot ($cacheName + '.json')
     if (Test-Path -LiteralPath $cacheFile -PathType Leaf) {
         try {
             $cache = Get-Content -LiteralPath $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -494,7 +501,7 @@ function Get-ReleaseCached([string]$repo) {
     if ($State.RateLimited -or $State.RateLimitUntil -gt [datetimeoffset]::Now) {
         throw ((L 'GitHub-Rate-Limit aktiv bis {0}; kein gueltiger Cache fuer {1}' 'GitHub rate limit active until {0}; no valid cache for {1}') -f $State.RateLimitUntil.ToString('dd.MM.yyyy HH:mm:ss zzz'),$repo)
     }
-    $api = 'https://api.github.com/repos/' + $Owner + '/' + $repo + '/releases/latest'
+    $api = 'https://api.github.com/repos/' + $owner + '/' + $repo + '/releases/latest'
     $release = Invoke-Retry $api
     if ($null -eq $release -or -not $release.tag_name) { throw (L 'GitHub-Release ohne Tag' 'GitHub release without tag') }
     try {
@@ -504,6 +511,38 @@ function Get-ReleaseCached([string]$repo) {
         Move-Item -LiteralPath $tmp -Destination $cacheFile -Force -ErrorAction Stop
     } catch { Write-Warning (((L '{0}: Release-Cache konnte nicht gespeichert werden: ' '{0}: could not save release cache: ') -f $repo) + $_.Exception.Message) }
     return $release
+}
+function Test-UpdaterReleaseUrl([string]$url) {
+    # Only the release page of this project may be opened.
+    return ($url -match '^https://github\.com/slothmade/craft-updater/releases/tag/v\d+(\.\d+){1,3}$')
+}
+function Find-UpdaterUpdate {
+    # Notice only: is there a newer Craft Updater on GitHub? Nothing is downloaded or installed.
+    # Any problem (offline, rate limit, odd release) is ignored quietly - it never blocks the run.
+    try {
+        $localText = $UpdaterVersion
+        # For testing the notice: pretend to be an older version (format strictly checked).
+        if ($env:CRAFT_UPDATER_TEST_LOCAL_VERSION -match '^\d+(\.\d+){1,3}$') { $localText = $env:CRAFT_UPDATER_TEST_LOCAL_VERSION }
+        $release = Get-ReleaseCached $UpdaterRepo $UpdaterOwner
+        if ($null -eq $release -or $release.draft -or $release.prerelease) { return }
+        $tag = [string]$release.tag_name
+        if ($tag -notmatch '^v\d+(\.\d+){1,3}$') { return }
+        $remote = Parse-Version $tag
+        $local = Parse-Version $localText
+        if ($null -eq $remote -or $null -eq $local -or $remote -le $local) { return }
+        # Build the address ourselves instead of trusting a link from the answer.
+        $url = 'https://github.com/' + $UpdaterOwner + '/' + $UpdaterRepo + '/releases/tag/' + $tag
+        if (-not (Test-UpdaterReleaseUrl $url)) { return }
+        $State.UpdaterUpdate = [pscustomobject]@{ Version=$tag; Url=$url }
+        if ($null -ne $GuiSync) { $GuiSync.UpdaterUpdate = $State.UpdaterUpdate }
+        Write-UpdaterNotice
+    } catch {
+        Write-Host ((L 'Pruefung auf neue Craft-Updater-Version nicht moeglich: ' 'Could not check for a new Craft Updater version: ') + $_.Exception.Message) -ForegroundColor DarkGray
+    }
+}
+function Write-UpdaterNotice {
+    if ($null -eq $State.UpdaterUpdate) { return }
+    Write-Host ((L 'NEUE CRAFT-UPDATER-VERSION {0} VERFUEGBAR: {1}' 'NEW CRAFT UPDATER VERSION {0} AVAILABLE: {1}') -f $State.UpdaterUpdate.Version,$State.UpdaterUpdate.Url) -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -1281,6 +1320,7 @@ function Invoke-CraftMaintenance {
 }
 function Invoke-UpdateRun {
     try {
+        Find-UpdaterUpdate
         $searchIndex = 0
         foreach ($program in $Programs) {
             Set-GuiStatus ((L 'Suche Updates: {0} ({1} von {2}) ...' 'Checking for updates: {0} ({1} of {2}) ...') -f $program.Name,($searchIndex + 1),$Programs.Count) $searchIndex $Programs.Count
@@ -1293,6 +1333,8 @@ function Invoke-UpdateRun {
     } finally {
         Write-RunSummary
         Invoke-CraftMaintenance
+        # Console: repeat the notice at the end so it does not scroll away.
+        if ($null -eq $GuiSync) { Write-UpdaterNotice }
     }
 }
 function Invoke-DiagnoseRun {
@@ -1348,6 +1390,11 @@ function Open-ReleaseNotesUrl([string]$url) {
     # Opened through Explorer, so the browser starts with normal user rights and not with the
     # updater's administrator rights.
     if (-not (Test-ReleaseNotesUrl $url)) { return $false }
+    try { Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList $url; return $true } catch { return $false }
+}
+function Open-UpdaterReleasePage([string]$url) {
+    # Opens only the release page of this project, without admin rights. No download.
+    if (-not (Test-UpdaterReleaseUrl $url)) { return $false }
     try { Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList $url; return $true } catch { return $false }
 }
 function Open-ProjectPage {
@@ -1546,6 +1593,7 @@ function New-GuiSync {
         ProgressValue = 0; ProgressMax = $Programs.Count
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
         Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{})
+        UpdaterUpdate = $null
     })
 }
 function Set-CraftTitleBar($form) {
@@ -1769,6 +1817,19 @@ function Start-CraftWindow {
     $footerLink.Anchor = 'Bottom,Left'
     $footerLink.Add_LinkClicked({ [void](Open-ProjectPage) })
 
+    # Notice at the bottom right when a newer Craft Updater is on GitHub (only opens the release page).
+    $updateLink = New-Object System.Windows.Forms.LinkLabel
+    $updateLink.AutoSize = $true
+    $updateLink.Font = New-Object System.Drawing.Font('Segoe UI',8,[System.Drawing.FontStyle]::Bold)
+    $updateLink.LinkColor = [System.Drawing.Color]::FromArgb($BrandColor[0],$BrandColor[1],$BrandColor[2])
+    $updateLink.ActiveLinkColor = [System.Drawing.Color]::FromArgb($BrandColor[0],$BrandColor[1],$BrandColor[2])
+    $updateLink.LinkBehavior = 'HoverUnderline'
+    $updateLink.Anchor = 'Bottom,Right'
+    $updateLink.Visible = $false
+    $updateTip = New-Object System.Windows.Forms.ToolTip
+    $updateTip.SetToolTip($updateLink,(L 'Öffnet die Download-Seite auf GitHub. Es wird nichts automatisch heruntergeladen oder installiert.' 'Opens the download page on GitHub. Nothing is downloaded or installed automatically.'))
+    $updateLink.Add_LinkClicked({ if ($null -ne $sync.UpdaterUpdate) { [void](Open-UpdaterReleasePage ([string]$sync.UpdaterUpdate.Url)) } })
+
     $btnReport = New-Object System.Windows.Forms.Button
     $btnReport.Text = (L 'Fehlerbericht öffnen' 'Open error report')
     $btnReport.Location = New-Object System.Drawing.Point(16,480)
@@ -1799,7 +1860,7 @@ function Start-CraftWindow {
     $btnClose.Anchor = 'Bottom,Right'
     $btnClose.Enabled = $false
 
-    $form.Controls.AddRange(@($list,$mark,$status,$progress,$btnReport,$btnNotes,$btnInstall,$btnClose,$footerLink,$header))
+    $form.Controls.AddRange(@($list,$mark,$status,$progress,$btnReport,$btnNotes,$btnInstall,$btnClose,$footerLink,$updateLink,$header))
 
     # --- Finish when the background run is done ---
     $finish = {
@@ -1879,6 +1940,11 @@ function Start-CraftWindow {
             }
             if ($status.Text -ne [string]$sync.StatusText) { $status.Text = [string]$sync.StatusText }
             if (-not $btnNotes.Visible -and $sync.Notes.Count -gt 0) { $btnNotes.Visible = $true }
+            if (-not $updateLink.Visible -and $null -ne $sync.UpdaterUpdate) {
+                $updateLink.Text = (L 'Neue Craft-Updater-Version {0} verfügbar' 'New Craft Updater version {0} available') -f [string]$sync.UpdaterUpdate.Version
+                $updateLink.Location = New-Object System.Drawing.Point(($form.ClientSize.Width - $updateLink.PreferredWidth - 14),$footerLink.Top)
+                $updateLink.Visible = $true
+            }
             $max = [math]::Max(1,[int]$sync.ProgressMax)
             if ($progress.Maximum -ne $max) { $progress.Maximum = $max }
             $pval = [math]::Min($max,[math]::Max(0,[int]$sync.ProgressValue))

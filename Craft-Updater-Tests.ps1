@@ -606,6 +606,51 @@ try {
         ('TextureCraft' -match $tc[0].Pattern) -and -not ('WordCraft' -match $tc[0].Pattern) -and
         ('texturecraft-0.3.2-windows-x64.msi' -match '(?i)(^|[._-])(x64|amd64|x86_64)([._-]|$)')
     }
+    Write-Host "`n[15] New in 5.8.1: notice about a newer Craft Updater"
+    function Test-UpdaterNotice($release,[string]$localVersion='') {
+        Reset-State; $State.UpdaterUpdate = $null; $Fake.Release = $release
+        $saved = $env:CRAFT_UPDATER_TEST_LOCAL_VERSION; $env:CRAFT_UPDATER_TEST_LOCAL_VERSION = $localVersion
+        try { Find-UpdaterUpdate } finally { $env:CRAFT_UPDATER_TEST_LOCAL_VERSION = $saved }
+        return $State.UpdaterUpdate
+    }
+    Test-Case 'Updater notice: newer release on GitHub is reported with its release page' {
+        $u = Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0'; draft=$false; prerelease=$false })
+        ($null -ne $u) -and ($u.Version -eq 'v99.0') -and ($u.Url -eq 'https://github.com/slothmade/craft-updater/releases/tag/v99.0') -and ($State.Warnings.Count -eq 0)
+    }
+    Test-Case 'Updater notice: same or older version gives no notice' {
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name=('v' + $UpdaterVersion) }))) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='v5.8' })))
+    }
+    Test-Case 'Updater notice: test switch pretends an older version (and only takes version numbers)' {
+        $u = Test-UpdaterNotice ([pscustomobject]@{ tag_name='v5.8' }) '5.7'
+        ($null -ne $u) -and ($u.Version -eq 'v5.8') -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='v5.8' }) '5.7; Remove-Item x'))
+    }
+    Test-Case 'Updater notice: odd answers are ignored quietly (no tag, odd tag, draft, prerelease, nothing)' {
+        ($null -eq (Test-UpdaterNotice $null)) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='' }))) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0/../../evil' }))) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='latest' }))) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0'; draft=$true }))) -and
+        ($null -eq (Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0'; prerelease=$true }))) -and
+        ($State.Warnings.Count -eq 0)
+    }
+    Test-Case 'Updater notice: only the release page of this project may be opened' {
+        (Test-UpdaterReleaseUrl 'https://github.com/slothmade/craft-updater/releases/tag/v5.9') -and
+        (Test-UpdaterReleaseUrl 'https://github.com/slothmade/craft-updater/releases/tag/v5.8.2') -and
+        -not (Test-UpdaterReleaseUrl 'https://github.com/someone/craft-updater/releases/tag/v5.9') -and
+        -not (Test-UpdaterReleaseUrl 'https://github.com/slothmade/craft-updater/releases/download/v5.9/x.zip') -and
+        -not (Test-UpdaterReleaseUrl 'https://evil.example/slothmade/craft-updater/releases/tag/v5.9') -and
+        -not (Open-UpdaterReleasePage 'https://evil.example/')
+    }
+    Test-Case 'Updater notice: own releases use a separate cache file and are checked first' {
+        ($UpdaterText -match [regex]::Escape("`$cacheName = `$(if (`$owner -eq `$Owner) { `$repo } else { `$owner + '--' + `$repo })")) -and
+        ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+\$searchIndex = 0')
+    }
+    Test-Case 'Window: updater notice link is wired up and opens only the checked page' {
+        ($UpdaterText -match [regex]::Escape('$updateLink.Add_LinkClicked({ if ($null -ne $sync.UpdaterUpdate) { [void](Open-UpdaterReleasePage ([string]$sync.UpdaterUpdate.Url)) } })')) -and
+        ($UpdaterText -match [regex]::Escape('$footerLink,$updateLink,$header')) -and ($UpdaterText -match [regex]::Escape('UpdaterUpdate = $null'))
+    }
     Test-Case 'Window: "What is new" button is wired up' {
         ($UpdaterText -match [regex]::Escape('$btnNotes.Add_Click({ & $showNotes })')) -and ($UpdaterText -match [regex]::Escape('$list.Add_DoubleClick({ & $showNotes })')) -and
         ($UpdaterText -match [regex]::Escape("Notes = [hashtable]::Synchronized(@{})"))

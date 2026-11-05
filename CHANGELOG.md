@@ -3,6 +3,7 @@
 ## 5.8.1
 
 - New: **TextureCraft** is updated as well (now 14 Craft programs). Its installer goes through exactly the same checks as all others.
+- New: a notice at the bottom right of the window (and in the console) when a newer Craft Updater is on GitHub. Clicking it only opens the release page; nothing is downloaded or installed automatically. Any problem with this check is ignored quietly.
 - Instructions: what to do when Windows 11 *Smart App Control* blocks the launcher (unblock the ZIP before extracting, no need to turn protection off).
 
 ## 5.8 – first public version

@@ -35,6 +35,7 @@ That's it. Nothing is installed on your PC except the Craft updates you approve.
 - **Shows what's new** in each update before you decide: click a program in the list and then *What's new?*, or double-click the program.
 - **Asks once, clearly.** *Install* button plus *Yes*, or `YES` (German: `JA`) in console mode.
 - **Verifies afterwards** that the new version is really installed.
+- **Tells you about a new Craft Updater version** with a small link at the bottom right of the window. It only opens the release page; nothing is downloaded or installed automatically.
 - **Leaves a shareable report** when something goes wrong, in the folder *Error reports* (German: *Fehlermeldung*). Your user name and computer name are removed from it.
 - **Speaks German or English**, depending on your Windows language (override with `CRAFT_UPDATER_LANG=de` or `en`).
 
@@ -123,7 +124,7 @@ Craft Updater does not collect or send any personal data. This program will not 
 - While checking a code signature, Windows itself may contact Microsoft's certificate servers (for example to check whether a certificate was revoked). This is done by Windows, not by Craft Updater.
 - Everything else stays on your PC: the cache, logs and reports in `%LOCALAPPDATA%\CraftUpdater`, and error reports in the *Error reports* folder next to the updater.
 - In the error report your Windows user name and computer name are replaced, so you can share it. The detailed logs in `%LOCALAPPDATA%\CraftUpdater` are not changed and never leave your PC.
-- When you start Craft Updater, it asks GitHub for the latest releases of the Craft apps; this is what the program is for. GitHub's own privacy statement applies to these requests: [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+- When you start Craft Updater, it asks GitHub for the latest releases of the Craft apps (this is what the program is for) and of Craft Updater itself (only to tell you about a new version). GitHub's own privacy statement applies to these requests: [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 
 ## Security
 
