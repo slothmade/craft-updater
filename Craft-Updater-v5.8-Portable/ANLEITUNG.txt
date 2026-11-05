@@ -20,6 +20,9 @@ STARTEN (jedes Mal)
 1. Doppelt auf "Craft-Updater-STARTEN.cmd" klicken (oder auf deine
    Verknüpfung). Beim ersten Mal warnt Windows evtl.:
    "Weitere Informationen" -> "Trotzdem ausführen".
+   Meldet "Smart App Control" eine blockierte Datei: Ordner löschen,
+   Rechtsklick auf die ZIP -> Eigenschaften -> unten "Zulassen" anhaken
+   -> OK, dann neu entpacken. Smart App Control bitte nicht abschalten.
 2. Windows fragt nach Administratorrechten -> "Ja".
 3. Im Fenster siehst du alle Craft-Programme und ihren Stand.
    Gibt es Updates:

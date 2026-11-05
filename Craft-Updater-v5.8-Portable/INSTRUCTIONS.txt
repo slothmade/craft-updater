@@ -21,6 +21,9 @@ START (every time)
 1. Double-click "Craft-Updater-STARTEN.cmd" (or your shortcut).
    The first time Windows may warn you:
    "More info" -> "Run anyway".
+   If "Smart App Control" blocks a file: delete the folder, right-click
+   the ZIP -> Properties -> tick "Unblock" at the bottom -> OK, then
+   extract it again. Please do not turn Smart App Control off.
 2. Windows asks for administrator rights -> "Yes".
 3. The window shows all Craft programs and their state.
    If there are updates:
