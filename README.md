@@ -64,7 +64,7 @@ Craft Updater is deliberately small. It only updates apps you already have, and 
 - **one** failed security check stops the **whole** run – nothing is installed
 - nothing is installed without your *Install* + *Yes*
 
-Why the signature check matters: a SHA-256 checksum is published together with the file, or copied from the same release. If a release were ever tampered with, the checksum could match the tampered file too. The code signature with the expected publisher and certificate profile is an independent second lock. The ArtCraft team is already tracking such a publisher check for its launcher on Windows and Linux ([craft-launcher#769](https://github.com/storytold/craft-launcher/issues/769)).
+Why the signature check matters: a SHA-256 checksum is published together with the file, or copied from the same release. If a release were ever tampered with, the checksum could match the tampered file too. The code signature with the expected publisher and certificate profile is an independent second lock.
 
 ### Craft Updater or ArtCraft Launcher?
 
@@ -81,7 +81,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Shows what's new | yes | yes |
 | New Craft apps | added with a Craft Updater release | added by the ArtCraft team, also community apps |
 | Languages | German, English | many |
-| Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission; a publisher check is tracked in [#769](https://github.com/storytold/craft-launcher/issues/769) |
+| Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission |
 | Needs to be installed itself | no (portable folder) | yes (signed installer) |
 | Signed program, updates itself | no – it tells you about a new version, you download it yourself | yes, and checks that its own update is signed by the same publisher |
 
@@ -179,6 +179,12 @@ Instead, every release is built on GitHub's own machines from the public code in
 
 - Committers, reviewers and release approval: [@slothmade](https://github.com/slothmade)
 - Privacy: see [Privacy](#privacy) above.
+
+## Why this exists
+
+Craft Updater is a fun project. I built it for myself and a few friends who wanted to keep their Craft apps up to date without installing another program or finding their way around GitHub releases – and yes, the irony isn't lost on me that it now lives on GitHub itself.
+
+Working on it got me hooked: this project is what made me start learning to code. It will keep growing as a hobby, at its own pace. If it's useful to you too, that makes me happy.
 
 ## License
 
