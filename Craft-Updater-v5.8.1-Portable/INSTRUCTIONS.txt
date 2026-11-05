@@ -1,4 +1,4 @@
-﻿CRAFT UPDATER 5.8
+﻿CRAFT UPDATER 5.8.1
 =================
 (Deutsch: siehe ANLEITUNG.txt)
 
@@ -10,7 +10,7 @@ The program speaks German on a German Windows and English otherwise.
 
 SET UP (once)
 -------------
-1. Drag the folder "Craft-Updater-v5.8-Portable" out of the ZIP onto your
+1. Drag the folder "Craft-Updater-v5.8.1-Portable" out of the ZIP onto your
    desktop. Do not start it inside the ZIP.
 2. Tip for a quick start: right-click "Craft-Updater-STARTEN.cmd"
    -> "Send to" -> "Desktop (create shortcut)".

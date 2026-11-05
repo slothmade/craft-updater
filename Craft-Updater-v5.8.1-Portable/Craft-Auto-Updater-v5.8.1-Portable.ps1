@@ -1,4 +1,4 @@
-﻿# Craft Auto-Updater v5.8 Portable - Windows PowerShell 5.1
+﻿# Craft Auto-Updater v5.8.1 Portable - Windows PowerShell 5.1
 # Installs updates only after every security check has passed and after one explicit
 # approval (window: "Install" button plus confirmation; console: type YES / JA).
 #
@@ -70,7 +70,7 @@ function L([string]$de,[string]$en) {
 # ============================================================================
 # 1. CONFIGURATION
 # ============================================================================
-$UpdaterVersion = '5.8'
+$UpdaterVersion = '5.8.1'
 # Project page (shown small at the bottom of the window).
 $ProjectUrl = 'https://github.com/slothmade/craft-updater'
 $ScriptPath = $PSCommandPath
@@ -89,7 +89,8 @@ $Programs = @(
     @{Name='LightCraft';Repo='lightcraft';Pattern='^LightCraft\b'},
     @{Name='FigCraft';Repo='figcraft';Pattern='^FigCraft\b'},
     @{Name='SoundCraft';Repo='soundcraft';Pattern='^SoundCraft\b'},
-    @{Name='CADCraft';Repo='cadcraft';Pattern='^CADCraft\b'}
+    @{Name='CADCraft';Repo='cadcraft';Pattern='^CADCraft\b'},
+    @{Name='TextureCraft';Repo='texturecraft';Pattern='^TextureCraft\b'}
 )
 
 # Signature and publisher. The profile EKU was derived from previously approved, validly
@@ -106,7 +107,7 @@ $TimeoutSeconds = 120
 $InstallTimeoutSeconds = 1800
 $MinReserveBytes = 500MB
 # 60 minutes: new releases are detected after one hour at the latest.
-# 13 API requests per run stay far below the GitHub limit (60 per hour).
+# 14 API requests per run stay far below the GitHub limit (60 per hour).
 $CacheTtlMinutes = 60
 $Headers = @{'User-Agent'=('Craft-Updater-v' + $UpdaterVersion);'Accept'='application/vnd.github+json'}
 

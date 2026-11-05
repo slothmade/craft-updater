@@ -21,7 +21,7 @@ body:
     id: updater_version
     attributes:
       label: Craft Updater version
-      placeholder: "e.g. 5.8"
+      placeholder: "e.g. 5.8.1"
     validations:
       required: true
   - type: input

@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.8.1
+
+- New: **TextureCraft** is updated as well (now 14 Craft programs). Its installer goes through exactly the same checks as all others.
+- Instructions: what to do when Windows 11 *Smart App Control* blocks the launcher (unblock the ZIP before extracting, no need to turn protection off).
+
 ## 5.8 – first public version
 
 **Safety**

@@ -5,13 +5,13 @@
 [![Tests](https://github.com/slothmade/craft-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/slothmade/craft-updater/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small, careful Windows updater for the **Craft** desktop apps: WordCraft, GridCraft, DeckCraft, EffectCraft, DesignCraft, PhotoCraft, VectorCraft, FilmCraft, PdfCraft, LightCraft, FigCraft, SoundCraft and CADCraft.
+A small, careful Windows updater for the **Craft** desktop apps: WordCraft, GridCraft, DeckCraft, EffectCraft, DesignCraft, PhotoCraft, VectorCraft, FilmCraft, PdfCraft, LightCraft, FigCraft, SoundCraft, CADCraft and TextureCraft.
 
 It checks the official GitHub releases, downloads only properly signed installers, verifies them thoroughly and installs updates **only after you approve them**.
 
 > **Unofficial project.** Craft Updater is not made by, affiliated with or endorsed by the developers of the Craft apps. All product names belong to their respective owners.
 
-*Deutsch: Das Programm spricht auf einem deutschen Windows automatisch Deutsch. Eine deutsche Anleitung liegt im Paket unter [`ANLEITUNG.txt`](Craft-Updater-v5.8-Portable/ANLEITUNG.txt).*
+*Deutsch: Das Programm spricht auf einem deutschen Windows automatisch Deutsch. Eine deutsche Anleitung liegt im Paket unter [`ANLEITUNG.txt`](Craft-Updater-v5.8.1-Portable/ANLEITUNG.txt).*
 
 <p align="center">
   <img src="docs/screenshot-en.png" width="420" alt="Craft Updater window in English: one update ready to install, all other Craft programs up to date">
@@ -20,7 +20,7 @@ It checks the official GitHub releases, downloads only properly signed installer
 
 ## Quick start
 
-1. Download `Craft-Updater-v5.8-Portable.zip` from the [latest release](../../releases/latest) and extract the folder, for example to your desktop.
+1. Download `Craft-Updater-v5.8.1-Portable.zip` from the [latest release](../../releases/latest) and extract the folder, for example to your desktop.
 2. Double-click `Craft-Updater-STARTEN.cmd` and allow administrator rights.
 3. If updates are available, click **Install** and confirm with **Yes**.
 
@@ -75,10 +75,10 @@ No. It is an independent hobby project. It only uses the public releases of the 
 Please do **not** turn off your virus scanner. First check that your download is genuine (see the next question). Then report the false positive to your antivirus vendor and open an [issue](../../issues/new/choose) with the scanner's name and detection name. PowerShell scripts that ask for administrator rights are sometimes flagged by heuristics. A signed version is planned to make this rare.
 
 **Windows says "Smart App Control blocked a file that may be unsafe". What now?**
-Smart App Control (Windows 11) blocks every unsigned script that was downloaded from the internet, and it has no "Run anyway" button. If you trust this download (check it as described in the next question), remove the internet mark from the ZIP **before** extracting it: delete the already extracted folder, right-click `Craft-Updater-v5.8-Portable.zip` → **Properties** → tick **Unblock** at the bottom → **OK**, then extract it again and start `Craft-Updater-STARTEN.cmd`. Please do not turn Smart App Control off. A signed version is planned to make this step unnecessary.
+Smart App Control (Windows 11) blocks every unsigned script that was downloaded from the internet, and it has no "Run anyway" button. If you trust this download (check it as described in the next question), remove the internet mark from the ZIP **before** extracting it: delete the already extracted folder, right-click `Craft-Updater-v5.8.1-Portable.zip` → **Properties** → tick **Unblock** at the bottom → **OK**, then extract it again and start `Craft-Updater-STARTEN.cmd`. Please do not turn Smart App Control off. A signed version is planned to make this step unnecessary.
 
 **How do I check that my download is genuine?**
-Every release has a file `SHA256SUMS`. In PowerShell, run `Get-FileHash .\Craft-Updater-v5.8-Portable.zip -Algorithm SHA256`. The result must be exactly the value in `SHA256SUMS`.
+Every release has a file `SHA256SUMS`. In PowerShell, run `Get-FileHash .\Craft-Updater-v5.8.1-Portable.zip -Algorithm SHA256`. The result must be exactly the value in `SHA256SUMS`.
 
 **Why does Windows ask for administrator rights?**
 Updates of the Craft apps are installed for all users of the PC, and Windows only allows that with administrator rights. Nothing is installed until you also click *Install* and *Yes*.
@@ -104,13 +104,13 @@ No. See [Privacy](#privacy).
 | `-Konsole` | `-ConsoleOnly` | Run in the console instead of the window |
 | `-Ausfuehrlich` | `-Detailed` | Print more details |
 
-Example: `powershell -NoProfile -ExecutionPolicy Bypass -File .\Craft-Auto-Updater-v5.8-Portable.ps1 -CheckOnly`
+Example: `powershell -NoProfile -ExecutionPolicy Bypass -File .\Craft-Auto-Updater-v5.8.1-Portable.ps1 -CheckOnly`
 
 ## Uninstall
 
 Craft Updater does not install itself anywhere. To remove it:
 
-1. Delete the extracted `Craft-Updater-v5.8-Portable` folder.
+1. Delete the extracted `Craft-Updater-v5.8.1-Portable` folder.
 2. Delete `%LOCALAPPDATA%\CraftUpdater` (cache, logs and reports).
 
 Your Craft programs stay installed.
@@ -131,7 +131,7 @@ How the checks work, what they cannot protect against, and how to report a secur
 
 ## Development
 
-- `Craft-Updater-v5.8-Portable/` – the package that users download (launcher, script, instructions; icons in `assets/`)
+- `Craft-Updater-v5.8.1-Portable/` – the package that users download (launcher, script, instructions; icons in `assets/`)
 - `Craft-Updater-Tests.ps1` – offline tests: no network, no installation, no administrator rights
 - `.github/workflows/tests.yml` – runs on every push: parser check, code analysis (PSScriptAnalyzer) and the offline tests on Windows PowerShell 5.1
 - `.github/workflows/release.yml` – started by hand; builds the ZIP and `SHA256SUMS` and creates a **draft** release

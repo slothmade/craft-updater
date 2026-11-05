@@ -600,6 +600,12 @@ try {
         $n = $State.Notes['WordCraft']
         ($null -ne $n) -and ($n.Text -eq 'New') -and ($n.Version -eq 'v0.14.0') -and ($n.Url -like '*wordcraft/releases/tag/v0.14.0')
     }
+    Test-Case 'TextureCraft is in the program list (5.8.1)' {
+        $tc = @($Programs | Where-Object { $_.Name -eq 'TextureCraft' })
+        ($Programs.Count -eq 14) -and ($tc.Count -eq 1) -and ($tc[0].Repo -eq 'texturecraft') -and
+        ('TextureCraft' -match $tc[0].Pattern) -and -not ('WordCraft' -match $tc[0].Pattern) -and
+        ('texturecraft-0.3.2-windows-x64.msi' -match '(?i)(^|[._-])(x64|amd64|x86_64)([._-]|$)')
+    }
     Test-Case 'Window: "What is new" button is wired up' {
         ($UpdaterText -match [regex]::Escape('$btnNotes.Add_Click({ & $showNotes })')) -and ($UpdaterText -match [regex]::Escape('$list.Add_DoubleClick({ & $showNotes })')) -and
         ($UpdaterText -match [regex]::Escape("Notes = [hashtable]::Synchronized(@{})"))

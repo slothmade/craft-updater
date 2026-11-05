@@ -3,7 +3,7 @@ rem Craft Updater launcher: asks Windows for administrator rights, then starts t
 rem Messages are shown in English and German (Deutsch).
 setlocal
 cd /d "%~dp0" || (echo ERROR / FEHLER: folder not reachable / Ordner nicht erreichbar.& pause& exit /b 2)
-if not exist "%~dp0Craft-Auto-Updater-v5.8-Portable.ps1" (
+if not exist "%~dp0Craft-Auto-Updater-v5.8.1-Portable.ps1" (
   echo ERROR / FEHLER: the main script is missing in this folder / Hauptskript fehlt in diesem Ordner.
   pause
   exit /b 2
@@ -32,7 +32,7 @@ if errorlevel 1 (
 )
 echo Administrator rights confirmed / Administratorrechte bestaetigt. Craft Updater starting / startet.
 echo IMPORTANT / WICHTIG: nothing is installed without your approval / ohne deine Freigabe wird nichts installiert.
-"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Craft-Auto-Updater-v5.8-Portable.ps1"
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Craft-Auto-Updater-v5.8.1-Portable.ps1"
 set "RC=%errorlevel%"
 echo.
 echo Updater finished / beendet. Exit code / Rueckgabecode: %RC%
