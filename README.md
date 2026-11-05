@@ -186,6 +186,8 @@ Craft Updater is a fun project. I built it for myself and a few friends who want
 
 Working on it got me hooked: this project is what made me start learning to code. It will keep growing as a hobby, at its own pace. If it's useful to you too, that makes me happy.
 
+A big thank you to the ArtCraft team for the Craft apps and the ArtCraft Launcher, and for making them free and open source – Craft Updater only exists because of their work.
+
 ## License
 
 [MIT](LICENSE)
