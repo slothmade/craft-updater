@@ -67,6 +67,26 @@ Craft Updater is deliberately small. It only updates apps you already have, and 
 
 Why the signature check matters: the SHA-256 checksum comes from the same GitHub release as the file. If a release were ever tampered with, the checksum would match the tampered file too. The code signature with the expected publisher and certificate profile is an independent second lock.
 
+### Craft Updater or ArtCraft Launcher?
+
+Craft Updater is meant as an **addition**, not a replacement. An honest comparison with the official [ArtCraft Launcher](https://github.com/storytold/craft-launcher) (as of November 2026):
+
+| | Craft Updater | ArtCraft Launcher |
+|---|---|---|
+| Made by | a hobbyist (unofficial) | the ArtCraft team (official) |
+| Systems | Windows | Windows, macOS, Linux |
+| Updates installed apps | yes | yes |
+| Installs new apps | not yet (planned) | yes |
+| Opens the apps | no | yes |
+| New Craft apps | added with a Craft Updater release | added by the ArtCraft team |
+| Checks before installing | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table (see above) | checksum, file lock (from its source code) |
+| Needs to be installed itself | no (portable folder) | yes (signed installer) |
+| Signed program | not yet (planned) | yes |
+
+**Choose Craft Updater** if you are on Windows, already have your Craft apps and want every update checked very carefully before anything is installed – with one clear approval and a report you can share.
+
+**Choose the ArtCraft Launcher** if you want everything in one place – installing, updating and opening the apps – on any system, from the people who make the Craft apps. Both can be used side by side.
+
 ## FAQ
 
 **Is this official?**
