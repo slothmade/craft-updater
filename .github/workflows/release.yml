@@ -67,12 +67,28 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $folder = "Craft-Updater-v$($env:VERSION)-Portable"
           $out = Join-Path $pwd 'release-assets'
           [void](New-Item -ItemType Directory -Path $out -Force)
           $zip = Join-Path $out "$folder.zip"
-          [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $folder).Path, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+          # Entries are added one by one with forward slashes: ZipFile.CreateFromDirectory in
+          # Windows PowerShell 5.1 writes backslashes, which the ZIP standard does not allow.
+          $base = (Resolve-Path $folder).Path
+          $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+          try {
+            foreach ($file in @(Get-ChildItem -LiteralPath $base -Recurse -File | Sort-Object FullName)) {
+              $entryName = $folder + '/' + $file.FullName.Substring($base.Length).TrimStart([char[]]'\/').Replace('\','/')
+              [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal)
+            }
+          } finally { $archive.Dispose() }
+          $check = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $bad = @($check.Entries | Where-Object { $_.FullName.Contains('\') -or -not $_.FullName.StartsWith($folder + '/') })
+            if ($bad.Count -gt 0 -or $check.Entries.Count -eq 0) { throw 'The ZIP has wrong entry names.' }
+            Write-Host ("ZIP entries: " + (($check.Entries | ForEach-Object FullName) -join ', '))
+          } finally { $check.Dispose() }
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
           [IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS'), ("{0}  {1}`n" -f $hash, "$folder.zip"), [Text.UTF8Encoding]::new($false))
           Write-Host "SHA256 $folder.zip = $hash"
@@ -88,7 +104,7 @@ jobs:
           $notes.Add('')
           $notes.Add('### Download')
           $notes.Add('')
-          $notes.Add('Download **' + "$folder.zip" + '** below and extract it. The "Source code" files are only for developers. / Lade **' + "$folder.zip" + '** herunter und entpacke sie. Die Dateien "Source code" sind nur für Entwickler.')
+          $notes.Add('Download **' + "$folder.zip" + '** below and extract it. The "Source code" files are only for developers. / Lade **' + "$folder.zip" + '** herunter und entpacke sie. Die Dateien "Source code" sind nur f' + [char]0x00FC + 'r Entwickler.')
           $notes.Add('')
           $notes.Add('### Verify your download')
           $notes.Add('')
