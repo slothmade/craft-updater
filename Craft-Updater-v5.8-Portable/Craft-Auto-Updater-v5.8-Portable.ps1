@@ -140,7 +140,9 @@ $OldInstallDir = Join-Path $env:ProgramFiles 'Craft Updater'
 
 # Paths. The data folder is intentionally independent of the version.
 if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw (L 'LOCALAPPDATA fehlt.' 'LOCALAPPDATA is missing.') }
-$Root = Join-Path $env:LOCALAPPDATA 'CraftUpdater'
+# Full, canonical path (short 8.3 names such as RUNNER~1 written out), so that the strict
+# path check before installing compares like with like.
+$Root = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'CraftUpdater'))
 $LegacyRoots = @(Join-Path $env:LOCALAPPDATA 'CraftUpdater-v5.6.2')
 $Verified = Join-Path $Root 'Verified'
 $Reports = Join-Path $Root 'Reports'

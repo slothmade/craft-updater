@@ -21,7 +21,8 @@ if (-not $UpdaterPath) {
     $UpdaterPath = ($candidates | Sort-Object { [version](($_.Name -replace '^Craft-Auto-Updater-v','') -replace '-Portable\.ps1$','') } -Descending | Select-Object -First 1).FullName
 }
 if (-not (Test-Path -LiteralPath $UpdaterPath)) { throw ('Updater not found: ' + $UpdaterPath) }
-$TestDir = Join-Path $env:TEMP ('CraftUpdaterTest-' + [guid]::NewGuid().ToString('N'))
+# Full path: on some PCs (and on GitHub's test machines) TEMP is a short 8.3 path like RUNNER~1.
+$TestDir = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('CraftUpdaterTest-' + [guid]::NewGuid().ToString('N'))))
 [void](New-Item -ItemType Directory -Path $TestDir)
 
 # --- Load the updater: everything BEFORE the start section (configuration + functions only) ---
