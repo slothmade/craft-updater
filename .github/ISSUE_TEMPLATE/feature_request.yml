@@ -1,0 +1,20 @@
+name: "Idea / Wunsch"
+description: "Suggest an improvement / Eine Verbesserung vorschlagen"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Craft Updater is deliberately small and strict. Ideas that keep it simple and safe have the best chance. English or German is fine.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like? / Was wünschst du dir?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help? / Wobei würde es helfen?
+    validations:
+      required: false

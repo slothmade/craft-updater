@@ -1,0 +1,62 @@
+﻿CRAFT UPDATER 5.8
+=================
+(English: see INSTRUCTIONS.txt)
+
+Hallo! Der Craft Updater hält deine Craft-Programme (WordCraft, GridCraft,
+PhotoCraft und Co.) aktuell. Er aktualisiert nur, was du schon hast, prüft
+jedes Update vorher genau und installiert erst, wenn du es bestätigst.
+
+
+EINRICHTEN (einmal)
+-------------------
+1. Den Ordner "Craft-Updater-v5.8-Portable" aus der ZIP auf den Desktop
+   ziehen. Nicht direkt in der ZIP starten.
+2. Tipp für schnellen Start: Rechtsklick auf "Craft-Updater-STARTEN.cmd"
+   -> "Senden an" -> "Desktop (Verknüpfung erstellen)".
+
+
+STARTEN (jedes Mal)
+-------------------
+1. Doppelt auf "Craft-Updater-STARTEN.cmd" klicken (oder auf deine
+   Verknüpfung). Beim ersten Mal warnt Windows evtl.:
+   "Weitere Informationen" -> "Trotzdem ausführen".
+2. Windows fragt nach Administratorrechten -> "Ja".
+3. Im Fenster siehst du alle Craft-Programme und ihren Stand.
+   Gibt es Updates:
+   -> "Was ist neu?" zeigt, was sich im Update ändert - immer für
+      ein Programm: Programm in der Liste anklicken, dann "Was ist neu?"
+      (oder einfach doppelt auf das Programm klicken). Ist nichts
+      angeklickt, kommt das erste Programm mit Update; weitere Updates
+      stehen unten im Text. Programme ohne Update haben nichts Neues.
+   -> "Installieren" klicken und die Rückfrage mit "Ja" bestätigen.
+   -> "Nicht installieren": nichts wird verändert.
+4. Am Ende steht unten, was passiert ist. Dann "Schließen".
+
+Das schwarze Fenster liegt minimiert in der Taskleiste - es gehört dazu und
+schließt sich von selbst, sobald du das Craft-Updater-Fenster schließt.
+
+Tipp: Craft-Programme vorher schließen. Geöffnete werden übersprungen und
+beim nächsten Mal aktualisiert.
+
+
+HILFE UND ENTFERNEN
+-------------------
+- Fehler: Ein Bericht landet im Ordner "Fehlermeldung" in diesem Ordner
+  (Knopf "Fehlerbericht öffnen" im Fenster). Den kannst du weitergeben
+  (Benutzername und Computername sind darin unkenntlich gemacht).
+  Bei einem Sicherheitsfehler installiert er nichts. Bitte nichts erzwingen.
+- Neue Version: https://github.com/slothmade/craft-updater/releases
+  herunterladen, alten Ordner löschen, neue ZIP entpacken.
+- Entfernen (deine Craft-Programme bleiben installiert). Lösche:
+    1. deinen Craft-Updater-Ordner
+    2. %LOCALAPPDATA%\CraftUpdater      (in die Explorer-Adresszeile tippen)
+- Hattest du eine frühere Fassung? Dann gibt es evtl. noch
+  C:\Program Files\Craft Updater und im alten Ordner ein Symbol
+  "Craft Updater". Beides wird nicht mehr gebraucht und kann weg
+  (Windows fragt beim Löschen nach Adminrechten).
+
+
+----
+Craft Updater - Copyright (c) 2026 slothmade (slothworks), MIT-Lizenz.
+https://github.com/slothmade/craft-updater
+Inoffiziell: nicht von den Entwicklern der Craft-Programme.

@@ -1,0 +1,63 @@
+﻿CRAFT UPDATER 5.8
+=================
+(Deutsch: siehe ANLEITUNG.txt)
+
+Hi! Craft Updater keeps your Craft programs (WordCraft, GridCraft,
+PhotoCraft and friends) up to date. It only updates what you already have,
+checks every update carefully first and installs only after you confirm.
+The program speaks German on a German Windows and English otherwise.
+
+
+SET UP (once)
+-------------
+1. Drag the folder "Craft-Updater-v5.8-Portable" out of the ZIP onto your
+   desktop. Do not start it inside the ZIP.
+2. Tip for a quick start: right-click "Craft-Updater-STARTEN.cmd"
+   -> "Send to" -> "Desktop (create shortcut)".
+
+
+START (every time)
+------------------
+1. Double-click "Craft-Updater-STARTEN.cmd" (or your shortcut).
+   The first time Windows may warn you:
+   "More info" -> "Run anyway".
+2. Windows asks for administrator rights -> "Yes".
+3. The window shows all Craft programs and their state.
+   If there are updates:
+   -> "What's new?" shows what the update changes - for one program at
+      a time: click a program in the list, then "What's new?" (or simply
+      double-click the program). If nothing is selected, the first
+      program with an update is shown; other updates are listed below
+      the text. Programs without an update have nothing new.
+   -> Click "Install" and confirm with "Yes".
+   -> "Do not install": nothing is changed.
+4. At the end the window tells you what happened. Then "Close".
+
+The black window sits minimised in the taskbar - it belongs to the updater
+and closes by itself as soon as you close the Craft Updater window.
+
+Tip: close your Craft programs first. Open ones are skipped and updated
+next time.
+
+
+HELP AND REMOVAL
+----------------
+- Errors: a report is saved in the folder "Error reports" inside this folder
+  (button "Open error report" in the window). You can share it
+  (your user name and computer name are removed from it).
+  On a security error nothing is installed. Please do not force anything.
+- New version: download it from https://github.com/slothmade/craft-updater/releases,
+  delete the old folder, extract the new ZIP.
+- Removal (your Craft programs stay installed). Delete:
+    1. your Craft Updater folder
+    2. %LOCALAPPDATA%\CraftUpdater      (type it into the Explorer address bar)
+- Did you use an earlier version? Then there may still be
+  C:\Program Files\Craft Updater and a shortcut "Craft Updater" in the old
+  folder. Both are no longer needed and can be deleted
+  (Windows asks for administrator rights when deleting).
+
+
+----
+Craft Updater - Copyright (c) 2026 slothmade (slothworks), MIT License.
+https://github.com/slothmade/craft-updater
+Unofficial: not made by the developers of the Craft apps.

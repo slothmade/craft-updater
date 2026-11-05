@@ -1,0 +1,10 @@
+# Normalise line endings in the repository; Windows files get CRLF on checkout.
+* text=auto
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.txt text eol=crlf
+*.md  text eol=lf
+*.yml text eol=lf
+*.ico binary
+*.png binary
+*.psd1 text eol=crlf

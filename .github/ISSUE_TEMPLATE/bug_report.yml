@@ -1,0 +1,55 @@
+name: "Bug report / Fehler melden"
+description: "Something does not work as expected / Etwas funktioniert nicht wie erwartet"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! English or German is fine. / Danke fürs Melden! Englisch oder Deutsch ist beides in Ordnung.
+
+        **Tip:** If something went wrong, Craft Updater saved a report in the folder *Error reports* (German: *Fehlermeldung*) next to the launcher. Attaching it helps the most. User name and computer name are already removed from it.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the existing issues and did not find the same problem. / Ich habe nach bestehenden Meldungen gesucht.
+          required: true
+        - label: I am using the latest release. / Ich nutze die neueste Version.
+          required: true
+  - type: input
+    id: updater_version
+    attributes:
+      label: Craft Updater version
+      placeholder: "e.g. 5.8"
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      description: "Press Win+R, type winver, press Enter. / Win+R, winver eingeben, Enter."
+      placeholder: "e.g. Windows 11 24H2 (26100.4202)"
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened? / Was ist passiert?
+      description: "What did you do, what did you expect, and what happened instead?"
+    validations:
+      required: true
+  - type: textarea
+    id: error_report
+    attributes:
+      label: Error report / Fehlerbericht
+      description: "Drag the error report file here, or paste its content. / Fehlerbericht hierher ziehen oder Inhalt einfügen."
+    validations:
+      required: false
+  - type: textarea
+    id: antivirus
+    attributes:
+      label: Antivirus message (if any) / Meldung des Virenscanners (falls vorhanden)
+      description: "Scanner name and detection name, a screenshot helps. / Name des Scanners und der Erkennung, ein Screenshot hilft."
+    validations:
+      required: false

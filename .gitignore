@@ -1,0 +1,5 @@
+# Local error reports and build output
+Fehlermeldung/
+Error reports/
+*.zip
+*.log
