@@ -80,7 +80,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Opens and uninstalls the apps | no | yes |
 | Go back to an older version | no | yes |
 | Shows what's new | yes | yes |
-| New Craft apps | added with a Craft Updater release | added by the ArtCraft team, also community apps |
+| New Craft apps | found automatically (`storytold` apps with a Windows installer); no community apps | added by the ArtCraft team, also community apps |
 | Languages | German, English | many |
 | Checks before installing on Windows | checksum, code signature, publisher, certificate profile, MSI contents, upgrade table – all checked again right before installing (see above) | checksum from the release (installers without one are refused); Windows itself shows the publisher when it asks for permission |
 | Needs to be installed itself | no (portable folder) | yes (signed installer) |
