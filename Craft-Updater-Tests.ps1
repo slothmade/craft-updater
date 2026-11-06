@@ -81,7 +81,7 @@ function Test-FreshInstallCandidate($item) {
     if ($message) { throw $message }
     return [pscustomobject]@{ Item=$item; Check=[pscustomobject]@{ Signer='Learning Machines Inc' } }
 }
-function Find-InstalledEntries($program) { return ,@($Fake.InstalledNow | Where-Object { [string]$_.DisplayName -match $program.Pattern }) }
+function Find-InstalledEntries($program) { return @($Fake.InstalledNow | Where-Object { [string]$_.DisplayName -match $program.Pattern }) }
 
 # --- Test framework ---
 $Passed = 0
@@ -843,7 +843,8 @@ try {
     Test-Case 'Fresh: only programs that are not installed are offered' {
         Set-FreshRun
         $c = @(Get-FreshInstallChoices)
-        ($c.Count -eq 1) -and ($c[0] -eq 'FigCraft')
+        $empty = @(Find-InstalledEntries $Programs[0])
+        ($c.Count -eq 1) -and ($c[0] -is [string]) -and ($c[0] -eq 'FigCraft') -and ($empty.Count -eq 0)
     }
     Test-Case 'Fresh: nothing is offered after a security error' {
         Set-FreshRun; Add-Result 'GridCraft' '0.1' 'v0.2' 'Sicherheitsfehler' 'x'

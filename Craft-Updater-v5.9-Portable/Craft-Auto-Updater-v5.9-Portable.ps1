@@ -985,14 +985,16 @@ function Get-MsiRelatedProducts([string]$upgradeCode) {
     $installer=$null
     try {
         $installer=New-Object -ComObject WindowsInstaller.Installer
-        return ,@($installer.RelatedProducts($upgradeCode) | ForEach-Object { [string]$_ })
+        # Plain list: callers wrap the result in @().
+        return @($installer.RelatedProducts($upgradeCode) | ForEach-Object { [string]$_ })
     } finally { Release-ComObject $installer }
 }
 function Find-InstalledEntries($program) {
     # Fresh from the registry. For automatically found apps only entries from the Craft publisher.
     $entries=Find-RegistryEntries @(Get-ItemProperty -Path $RegPaths -ErrorAction SilentlyContinue) $program.Pattern
     if ($program.Discovered) { $entries=@($entries | Where-Object { Test-AllowedRegistryPublisher ([string]$_.Publisher) }) }
-    return ,@($entries)
+    # Plain list: callers wrap the result in @().
+    return @($entries)
 }
 function Test-FreshInstallCandidate($item) {
     # Like Test-InstallationCandidate, for a program that is NOT installed yet. Instead of the
@@ -1317,10 +1319,11 @@ function Invoke-Installation {
 function Get-FreshInstallChoices {
     # Programs that may be offered for a new installation: not installed in this run, and
     # only if this run found no security error.
-    if ($State.SecurityBlocked -or @($State.Results | Where-Object { $_.Status -eq 'Sicherheitsfehler' }).Count -gt 0) { return ,@() }
+    # Plain list: callers wrap the result in @().
+    if ($State.SecurityBlocked -or @($State.Results | Where-Object { $_.Status -eq 'Sicherheitsfehler' }).Count -gt 0) { return @() }
     $lastByName=@{}
     foreach ($result in $State.Results) { $lastByName[[string]$result.Program]=$result }
-    return ,@(foreach ($program in $Programs) {
+    return @(foreach ($program in $Programs) {
         $last=$lastByName[[string]$program.Name]
         if ($null -ne $last -and $last.Status -eq 'Nicht installiert') { [string]$program.Name }
     })
