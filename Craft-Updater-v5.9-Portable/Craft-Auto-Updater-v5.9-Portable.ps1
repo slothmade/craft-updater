@@ -97,6 +97,16 @@ $Programs = @(
     @{Name='TextureCraft';Repo='texturecraft';Pattern='^TextureCraft\b'},
     @{Name='MaterialCraft';Repo='materialcraft';Pattern='^MaterialCraft\b'}
 )
+# New Craft apps are found automatically: public repositories of $Owner whose name ends in
+# "craft" and whose latest stable release has a Windows installer for this PC. They are shown as
+# "newly found" and go through EXACTLY the same checks as the apps above (signature, publisher,
+# certificate profile, MSI contents). The fixed list stays as the fallback (offline, rate limit).
+# Not Craft apps in this sense, or deliberately left out:
+$DiscoveryExcludedRepos = @('artcraft','artcraft-services','craft-launcher','craft-anything','solidcraft')
+# At most this many unknown repositories are looked at per run (one request each).
+$DiscoveryMaxChecks = 5
+# The repository list changes rarely: asked for at most once every 12 hours.
+$RepoListTtlMinutes = 720
 
 # Signature and publisher. The profile EKU was derived from previously approved, validly
 # signed MSI files; thumbprints rotate and are not used as an anchor.
@@ -112,7 +122,8 @@ $TimeoutSeconds = 120
 $InstallTimeoutSeconds = 1800
 $MinReserveBytes = 500MB
 # 60 minutes: new releases are detected after one hour at the latest.
-# 16 API requests per run (15 programs + this updater) stay far below the GitHub limit (60 per hour).
+# 16 API requests per run (15 programs + this updater), plus the repository list every 12 hours
+# and at most 5 new repositories, stay far below the GitHub limit (60 per hour).
 $CacheTtlMinutes = 60
 $Headers = @{'User-Agent'=('Craft-Updater-v' + $UpdaterVersion);'Accept'='application/vnd.github+json'}
 
@@ -570,6 +581,84 @@ function Save-SkippedUpdaterVersion([string]$version) {
         return $true
     } catch { return $false }
 }
+function Get-CraftRepoList {
+    # Names of the public repositories of $Owner, newest first. One request, cached for 12 hours.
+    $cacheFile = Join-Path $CacheRoot ($Owner + '--repos.json')
+    if (Test-Path -LiteralPath $cacheFile -PathType Leaf) {
+        try {
+            $cache = Get-Content -LiteralPath $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $age = ([datetimeoffset]::Now - [datetimeoffset]::Parse([string]$cache.SavedAt)).TotalMinutes
+            if ($age -ge 0 -and $age -le $RepoListTtlMinutes -and $null -ne $cache.Repos) { return @($cache.Repos | ForEach-Object { [string]$_ }) }
+        } catch {}
+    }
+    if ($State.RateLimited -or $State.RateLimitUntil -gt [datetimeoffset]::Now) { throw (L 'GitHub-Rate-Limit aktiv' 'GitHub rate limit active') }
+    $answer = Invoke-Retry ('https://api.github.com/users/' + $Owner + '/repos?per_page=100&sort=created&direction=desc')
+    $repos = @(foreach ($r in @($answer)) {
+        if ($null -eq $r -or $r.private -or $r.fork -or $r.archived -or $r.disabled) { continue }
+        $n = ([string]$r.name).ToLowerInvariant()
+        if ($n -match '^[a-z0-9-]{1,60}$') { $n }
+    })
+    try {
+        $tmp = $cacheFile + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+        $data = @{ SavedAt=[datetimeoffset]::Now.ToString('o'); Repos=$repos }
+        [IO.File]::WriteAllText($tmp,(ConvertTo-Json -InputObject $data -Depth 4),[Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmp -Destination $cacheFile -Force -ErrorAction Stop
+    } catch {}
+    return $repos
+}
+function ConvertTo-DiscoveredProgram([string]$repo,$release) {
+    # Program entry for a Craft app that is not in the fixed list yet, or $null.
+    # This only decides whether the repository LOOKS like a Craft app for this PC. The real
+    # checks (signature, publisher, certificate profile, MSI contents) come later, unchanged.
+    if ($repo -notmatch '^([a-z0-9]+(?:-[a-z0-9]+)*?)-?craft$') { return $null }
+    $base = $Matches[1]
+    if ($DiscoveryExcludedRepos -contains $repo) { return $null }
+    if (@($Programs | Where-Object { $_.Repo -eq $repo }).Count -gt 0) { return $null }
+    if ($null -eq $release -or $release.draft -or $release.prerelease) { return $null }
+    if ($null -eq (Parse-Version ([string]$release.tag_name))) { return $null }
+    $prefix = $repo + '-'
+    $msi = @($release.assets | Where-Object {
+        $_.state -eq 'uploaded' -and ([string]$_.name).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -and
+        ([string]$_.name) -match '(?i)\.msi$' -and ([string]$_.name) -match $ArchPattern
+    })
+    if ($msi.Count -eq 0) { return $null }
+    $parts = @($base -split '-')
+    $name = (@($parts | ForEach-Object { $_.Substring(0,1).ToUpperInvariant() + $_.Substring(1) }) -join '') + 'Craft'
+    # Nicer spelling from the release title if it names the same app (e.g. "CADCraft v1.0").
+    $titleMatch = [regex]::Match([string]$release.name,'(?i)\b([a-z0-9][a-z0-9 -]{0,40}?craft)\b')
+    if ($titleMatch.Success) {
+        $title = $titleMatch.Groups[1].Value.Trim()
+        if (($title -replace '[ -]','').ToLowerInvariant() -eq ($repo -replace '-','')) { $name = $title }
+    }
+    if ($name -notmatch '^[A-Za-z0-9][A-Za-z0-9 -]{0,40}$') { return $null }
+    $pattern = '^' + (@($parts | ForEach-Object { [regex]::Escape($_) }) -join '[ -]?') + '[ -]?craft\b'
+    # Must not overlap with a program we already know, in either direction.
+    foreach ($known in $Programs) { if ($known.Name -match $pattern -or $name -match $known.Pattern) { return $null } }
+    return @{ Name=$name; Repo=$repo; Pattern=$pattern; Discovered=$true }
+}
+function Find-NewCraftApps {
+    # Adds Craft apps that are not in the fixed list yet. Any problem is ignored quietly:
+    # the fixed list always works on its own.
+    try {
+        $checked = 0
+        foreach ($repo in @(Get-CraftRepoList)) {
+            if ($checked -ge $DiscoveryMaxChecks) { break }
+            if ($repo -notmatch 'craft$' -or $DiscoveryExcludedRepos -contains $repo) { continue }
+            if (@($Programs | Where-Object { $_.Repo -eq $repo }).Count -gt 0) { continue }
+            $checked++
+            $release = $null
+            # No release yet (or any other problem): not an app for us, at least not today.
+            try { $release = Get-ReleaseCached $repo } catch { continue }
+            $program = ConvertTo-DiscoveredProgram $repo $release
+            if ($null -eq $program) { continue }
+            $script:Programs = @($Programs) + @($program)
+            if ($null -ne $GuiSync) { $GuiSync.Discovered[$program.Name] = $true }
+            Write-Host ((L 'Neue Craft-App entdeckt: {0} ({1}/{2}) - wird genauso geprueft wie alle anderen.' 'New Craft app found: {0} ({1}/{2}) - checked exactly like all others.') -f $program.Name,$Owner,$repo) -ForegroundColor Cyan
+        }
+    } catch {
+        Write-Host ((L 'Suche nach neuen Craft-Apps nicht moeglich (feste Liste wird genutzt): ' 'Could not look for new Craft apps (using the fixed list): ') + $_.Exception.Message) -ForegroundColor DarkGray
+    }
+}
 function Write-UpdaterNotice {
     if ($null -eq $State.UpdaterUpdate) { return }
     Write-Host ((L 'NEUE CRAFT-UPDATER-VERSION {0} VERFUEGBAR: {1}' 'NEW CRAFT UPDATER VERSION {0} AVAILABLE: {1}') -f $State.UpdaterUpdate.Version,$State.UpdaterUpdate.Url) -ForegroundColor Yellow
@@ -903,6 +992,11 @@ function Find-ProgramUpdate($program) {
     $localText=''; $remoteText=''; $tempDir=$null
     try {
         $regEntries = Find-RegistryEntries $InstalledSnapshot $program.Pattern
+        if ($program.Discovered) {
+            # Automatically found app: only entries from the Craft publisher count, so a different
+            # program with a similar name is never mistaken for it.
+            $regEntries = @($regEntries | Where-Object { Test-AllowedRegistryPublisher ([string]$_.Publisher) })
+        }
         if ($regEntries.Count -eq 0) { Add-Result $program.Name '' '' 'Nicht installiert' (L 'Registry-Eintrag fehlt' 'No registry entry'); return }
         $app=Resolve-RegistryApp $regEntries $program.Name
         $localText=[string]$app.DisplayVersion
@@ -1351,6 +1445,7 @@ function Invoke-CraftMaintenance {
 function Invoke-UpdateRun {
     try {
         Find-UpdaterUpdate
+        Find-NewCraftApps
         $searchIndex = 0
         foreach ($program in $Programs) {
             Set-GuiStatus ((L 'Suche Updates: {0} ({1} von {2}) ...' 'Checking for updates: {0} ({1} of {2}) ...') -f $program.Name,($searchIndex + 1),$Programs.Count) $searchIndex $Programs.Count
@@ -1411,6 +1506,11 @@ function Format-VersionText([string]$version) {
     if ($v -match '^[vV]\d') { return 'v' + $v.Substring(1) }
     if ($v -match '^\d') { return 'v' + $v }
     return $v
+}
+function Get-CraftWindowHeight([int]$rows) {
+    # The window layout has room for 14 programs. Each further program adds one row (20 px),
+    # at most 10, so that every program is visible without scrolling.
+    return (548 + 20 * [Math]::Min([Math]::Max(0,$rows - 14),10))
 }
 function Get-RowVersionTexts($row) {
     # Window columns "Installed" and "New" for one row.
@@ -1680,7 +1780,7 @@ function New-GuiSync {
         ProgressValue = 0; ProgressMax = $Programs.Count
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
         Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{})
-        UpdaterUpdate = $null
+        UpdaterUpdate = $null; Discovered = [hashtable]::Synchronized(@{})
     })
 }
 function Set-CraftTitleBar($form) {
@@ -1853,18 +1953,22 @@ function Start-CraftWindow {
     [void]$list.Columns.Add((L 'Installiert' 'Installed'),95)
     [void]$list.Columns.Add((L 'Neu' 'New'),95)
     [void]$list.Columns.Add('Status',260)
-    foreach ($program in $Programs) {
-        $item = New-Object System.Windows.Forms.ListViewItem($program.Name)
+    # One row per program. Apps found automatically during the search get their row later.
+    $addRow = {
+        param([string]$programName)
+        $item = New-Object System.Windows.Forms.ListViewItem($programName)
         [void]$item.SubItems.Add('')
         [void]$item.SubItems.Add('')
         [void]$item.SubItems.Add((L 'Wartet ...' 'Waiting ...'))
         $item.ForeColor = [System.Drawing.Color]::Gray
         $item.UseItemStyleForSubItems = $true
         [void]$list.Items.Add($item)
-        $ui.Index[$program.Name] = $ui.Index.Count
-        $ui.Rank[$program.Name] = 1
-        $ui.Items[$program.Name] = $item
+        $ui.Index[$programName] = $ui.Index.Count
+        $ui.Rank[$programName] = 1
+        $ui.Items[$programName] = $item
+        return $item
     }
+    foreach ($program in $Programs) { [void](& $addRow ([string]$program.Name)) }
 
     $status = New-Object System.Windows.Forms.Label
     $status.Location = New-Object System.Drawing.Point(16,404)
@@ -1960,8 +2064,8 @@ function Start-CraftWindow {
     # The layout above has room for 14 programs. With more, the window grows by one row each
     # (at most 10) so that every program is visible without scrolling. Set AFTER adding the
     # controls: the anchors then move the lower controls and stretch the list.
-    $extraRows = [Math]::Min([Math]::Max(0,$Programs.Count - 14),10)
-    if ($extraRows -gt 0) { $form.ClientSize = New-Object System.Drawing.Size(640,(548 + 20 * $extraRows)) }
+    $wantedHeight = Get-CraftWindowHeight $Programs.Count
+    if ($wantedHeight -gt $form.ClientSize.Height) { $form.ClientSize = New-Object System.Drawing.Size($form.ClientSize.Width,$wantedHeight) }
 
     # --- Finish when the background run is done ---
     $finish = {
@@ -2012,11 +2116,21 @@ function Start-CraftWindow {
             foreach ($key in @($sync.Rows.Keys)) {
                 $row = $sync.Rows[$key]
                 $item = $ui.Items[[string]$key]
-                if ($null -eq $row -or $null -eq $item) { continue }
+                if ($null -eq $row) { continue }
+                if ($null -eq $item) {
+                    # A Craft app found automatically in the background: add its row and make
+                    # the window a little taller if needed (never smaller).
+                    if (-not $sync.Discovered.ContainsKey([string]$key) -or [string]$key -notmatch '^[A-Za-z0-9][A-Za-z0-9 -]{0,40}$') { continue }
+                    if (-not $rowsChanged) { $list.BeginUpdate(); $rowsChanged = $true }
+                    $item = & $addRow ([string]$key)
+                    $wantedHeight = Get-CraftWindowHeight $ui.Items.Count
+                    if ($wantedHeight -gt $form.ClientSize.Height -and $form.WindowState -eq 'Normal') { $form.ClientSize = New-Object System.Drawing.Size($form.ClientSize.Width,$wantedHeight) }
+                }
                 $texts = Get-RowVersionTexts $row
                 $inst = $texts[0]
                 $newText = $texts[1]
                 $stText = Get-FriendlyStatus ([string]$row.Status)
+                if ($sync.Discovered.ContainsKey([string]$key)) { $stText += (L ' (neu entdeckt)' ' (newly found)') }
                 $stCol = Get-StatusColor ([string]$row.Status)
                 $ui.Rank[[string]$key] = Get-SortRank ([string]$row.Status)
                 # Only touch rows that really changed, otherwise the list flickers on every tick.
@@ -2031,7 +2145,7 @@ function Start-CraftWindow {
             if ($rowsChanged) {
                 $list.EndUpdate()
                 # Sort: updates on top, not installed at the bottom (only when the order changes).
-                $order = @($Programs | ForEach-Object { [string]$_.Name } | Sort-Object @{Expression={ $ui.Rank[$_] }}, @{Expression={ $ui.Index[$_] }})
+                $order = @(@($ui.Index.Keys) | ForEach-Object { [string]$_ } | Sort-Object @{Expression={ $ui.Rank[$_] }}, @{Expression={ $ui.Index[$_] }})
                 $current = @($list.Items | ForEach-Object { $_.Text })
                 if (($current -join '|') -ne ($order -join '|')) {
                     $list.BeginUpdate()

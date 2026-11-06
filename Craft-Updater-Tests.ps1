@@ -55,11 +55,14 @@ if (-not $X64Pattern -or -not $X86Pattern) { throw 'Architecture patterns not fo
 $Platform = 'x64'; $ArchPattern = $X64Pattern
 
 # --- Replacements for functions that need the network, registry or Windows Installer ---
-$Fake = @{ Release = $null; CandidateError = @{}; Language = '1033'; Answer = ''; Asked = 0; ProbeLock = $false; LockSeen = $false }
+$Fake = @{ Repos = @(); RepoError = $false; Release = $null; CandidateError = @{}; Language = '1033'; Answer = ''; Asked = 0; ProbeLock = $false; LockSeen = $false }
 function Test-IsAdmin { return $true }
 # Replaces user input; counts how often it was asked.
 function Read-Host([string]$Prompt) { $Fake.Asked++; return $Fake.Answer }
 function Get-ReleaseCached([string]$repo) { return $Fake.Release }
+# Repository list for the automatic app search (5.9); the real function is kept for its own test.
+$RealCraftRepoList = ${function:Get-CraftRepoList}
+function Get-CraftRepoList { if ($Fake.RepoError) { throw 'offline' }; return $Fake.Repos }
 function Get-MsiProductInfo([string]$productCode,[string]$property) { return $Fake.Language }
 function Test-InstallationCandidate($item) {
     if ($Fake.ProbeLock) {
@@ -646,7 +649,7 @@ try {
     }
     Test-Case 'Updater notice: own releases use a separate cache file and are checked first' {
         ($UpdaterText -match [regex]::Escape("`$cacheName = `$(if (`$owner -eq `$Owner) { `$repo } else { `$owner + '--' + `$repo })")) -and
-        ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+\$searchIndex = 0')
+        ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+Find-NewCraftApps\s+\$searchIndex = 0')
     }
     Test-Case 'Window: updater notice link is wired up and opens only the checked page' {
         ($UpdaterText -match [regex]::Escape('$choice = Show-UpdaterNoticeDialog $form ([string]$notice.Version)')) -and
@@ -687,7 +690,8 @@ try {
     }
     Test-Case 'Window: uses the column helper and grows for more than 14 programs' {
         ($UpdaterText -match [regex]::Escape('$texts = Get-RowVersionTexts $row')) -and
-        ($UpdaterText -match [regex]::Escape('$extraRows = [Math]::Min([Math]::Max(0,$Programs.Count - 14),10)'))
+        ($UpdaterText -match [regex]::Escape('$wantedHeight = Get-CraftWindowHeight $Programs.Count')) -and
+        ((Get-CraftWindowHeight 14) -eq 548) -and ((Get-CraftWindowHeight 15) -eq 568) -and ((Get-CraftWindowHeight 40) -eq 748) -and ((Get-CraftWindowHeight 3) -eq 548)
     }
     Test-Case 'No leftover plans for a signed .exe in the script comments' {
         -not ($UpdaterText -match 'until there is a signed \.exe') -and -not ($UpdaterText -match 'replaced later by a signed \.exe')
@@ -722,6 +726,99 @@ try {
         Clear-Skipped
         ($null -eq $broken) -and ($null -eq $odd) -and ($null -ne $u)
     }
+    Write-Host "`n[18] New in 5.9: new Craft apps are found automatically"
+    $ProgramsBackup = $Programs
+    function New-DiscoveryRelease([string]$repo,[string]$title='',[string]$file='') {
+        if (-not $file) { $file = $repo + '-1.0.0-windows-x64.msi' }
+        $r = New-FakeRelease 'v1.0.0' @(New-FakeAsset $file ('https://github.com/storytold/' + $repo + '/releases/download/v1.0.0/' + $file))
+        $r | Add-Member -NotePropertyName name -NotePropertyValue $title
+        return $r
+    }
+    Test-Case 'Discovery: a Craft app with a Windows installer becomes a program' {
+        $p = ConvertTo-DiscoveredProgram 'newtoolcraft' (New-DiscoveryRelease 'newtoolcraft')
+        ($null -ne $p) -and $p.Discovered -and ($p.Name -eq 'NewtoolCraft') -and ($p.Repo -eq 'newtoolcraft') -and
+        ('NewtoolCraft' -match $p.Pattern) -and ('Newtool Craft 1.0' -match $p.Pattern) -and ('newtoolcraft' -match $p.Pattern) -and
+        -not ('NewtoolCraftX' -match $p.Pattern) -and -not ('My NewtoolCraft' -match $p.Pattern)
+    }
+    Test-Case 'Discovery: the name is taken from the release title when it fits' {
+        $a = ConvertTo-DiscoveredProgram 'xyzcraft' (New-DiscoveryRelease 'xyzcraft' 'XYZCraft v1.0.0')
+        $b = ConvertTo-DiscoveredProgram 'xyzcraft' (New-DiscoveryRelease 'xyzcraft' 'Release v1.0.0')
+        $c = ConvertTo-DiscoveredProgram 'big-tool-craft' (New-DiscoveryRelease 'big-tool-craft' 'Big Tool Craft 1.0')
+        ($a.Name -eq 'XYZCraft') -and ($b.Name -eq 'XyzCraft') -and ($c.Name -eq 'Big Tool Craft') -and
+        ('Big Tool Craft' -match $c.Pattern) -and ('BigToolCraft' -match $c.Pattern)
+    }
+    Test-Case 'Discovery: excluded, known and non-Craft repositories are ignored' {
+        ($null -eq (ConvertTo-DiscoveredProgram 'artcraft' (New-DiscoveryRelease 'artcraft'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'craft-anything' (New-DiscoveryRelease 'craft-anything'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'wordcraft' (New-DiscoveryRelease 'wordcraft'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'word-craft' (New-DiscoveryRelease 'word-craft'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'craft' (New-DiscoveryRelease 'craft'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'craftnotes' (New-DiscoveryRelease 'craftnotes')))
+    }
+    Test-Case 'Discovery: no Windows installer for this PC, or no stable release = not an app' {
+        $draft = New-DiscoveryRelease 'newtoolcraft'; $draft.draft = $true
+        $pre = New-DiscoveryRelease 'newtoolcraft'; $pre.prerelease = $true
+        $badTag = New-DiscoveryRelease 'newtoolcraft'; $badTag.tag_name = 'latest'
+        ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' (New-DiscoveryRelease 'newtoolcraft' '' 'newtoolcraft-1.0.0-windows-arm64.msi'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' (New-DiscoveryRelease 'newtoolcraft' '' 'newtoolcraft-1.0.0-macos.dmg'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' (New-DiscoveryRelease 'newtoolcraft' '' 'other-1.0.0-windows-x64.msi'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' $draft)) -and ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' $pre)) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' $badTag)) -and ($null -eq (ConvertTo-DiscoveredProgram 'newtoolcraft' $null))
+    }
+    Test-Case 'Discovery: found apps are added to the list, everything else stays' {
+        Reset-State; $Fake.RepoError = $false
+        $Fake.Repos = @('notes','newtoolcraft','wordcraft','craft-launcher','artcraft')
+        $Fake.Release = New-DiscoveryRelease 'newtoolcraft' 'NewToolCraft v1.0.0'
+        Find-NewCraftApps
+        $added = @($Programs | Where-Object { $_.Discovered })
+        $result = ($Programs.Count -eq ($ProgramsBackup.Count + 1)) -and ($added.Count -eq 1) -and ($added[0].Name -eq 'NewToolCraft') -and ($State.Warnings.Count -eq 0)
+        $script:Programs = $ProgramsBackup
+        $result
+    }
+    Test-Case 'Discovery: at most 5 unknown repositories are looked at per run' {
+        Reset-State; $Fake.RepoError = $false
+        $Fake.Repos = @('acraft','bcraft','ccraft','dcraft','ecraft','fcraft','gcraft')
+        $Fake.Release = New-FakeRelease 'v1.0.0' @()
+        $script:CountedReleases = 0
+        function Get-ReleaseCached([string]$repo) { $script:CountedReleases++; return $Fake.Release }
+        Find-NewCraftApps
+        $result = ($script:CountedReleases -eq 5) -and ($Programs.Count -eq $ProgramsBackup.Count)
+        $script:Programs = $ProgramsBackup
+        $result
+    }
+    Test-Case 'Discovery: offline or rate limit = fixed list only, no warning' {
+        Reset-State; $Fake.RepoError = $true
+        Find-NewCraftApps
+        $Fake.RepoError = $false
+        ($Programs.Count -eq $ProgramsBackup.Count) -and ($State.Warnings.Count -eq 0)
+    }
+    Test-Case 'Discovery: repository list skips forks, archived and odd names' {
+        $CacheRoot = Join-Path $TestDir 'RepoListCache'; [void](New-Item -ItemType Directory -Path $CacheRoot -Force)
+        Reset-State
+        function Invoke-Retry([string]$uri,[string]$outFile='') {
+            return @([pscustomobject]@{ name='NewToolCraft' }, [pscustomobject]@{ name='forkcraft'; fork=$true },
+                     [pscustomobject]@{ name='oldcraft'; archived=$true }, [pscustomobject]@{ name='bad name craft' })
+        }
+        $first = @(& $RealCraftRepoList)
+        function Invoke-Retry([string]$uri,[string]$outFile='') { throw 'must come from the cache' }
+        $second = @(& $RealCraftRepoList)
+        ($first.Count -eq 1) -and ($first[0] -eq 'newtoolcraft') -and ($second.Count -eq 1) -and ($second[0] -eq 'newtoolcraft')
+    }
+    Test-Case 'Discovery: a similar program from another publisher is not mistaken for the app' {
+        Reset-State; $ProcessSnapshot=@()
+        $p = ConvertTo-DiscoveredProgram 'minecraft' (New-DiscoveryRelease 'minecraft')
+        $InstalledSnapshot = @([pscustomobject]@{ DisplayName='Minecraft Launcher'; DisplayVersion='2.1.0'; Publisher='Mojang'; PSChildName='Minecraft'; WindowsInstaller=0; PSPath='HKLM' })
+        Find-ProgramUpdate $p
+        ($null -ne $p) -and ((Get-LastResult).Status -eq 'Nicht installiert') -and -not $State.SecurityBlocked
+    }
+    Test-Case 'Window: found apps get their own row marked "newly found"' {
+        ($UpdaterText -match [regex]::Escape('$item = & $addRow ([string]$key)')) -and
+        ($UpdaterText -match [regex]::Escape("if (`$sync.Discovered.ContainsKey([string]`$key)) { `$stText += (L ' (neu entdeckt)' ' (newly found)') }")) -and
+        ($UpdaterText -match [regex]::Escape('$order = @(@($ui.Index.Keys)')) -and
+        ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+Find-NewCraftApps')
+    }
+    $Programs = $ProgramsBackup
+
     Test-Case 'Window: skipping hides the notice for this window too' {
         ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
         ($UpdaterText -match [regex]::Escape("'skip'"))
