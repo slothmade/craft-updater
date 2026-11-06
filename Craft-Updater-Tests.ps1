@@ -45,6 +45,7 @@ $RecoveryDir = Join-Path $Reports 'Recovery'
 $CacheRoot = Join-Path $Root 'ReleaseCache'
 $CooldownPath = Join-Path $CacheRoot 'RateLimit.json'
 $HistoryPath = Join-Path $Reports 'History.jsonl'
+$SkippedUpdaterPath = Join-Path $Root 'SkippedUpdaterVersion.json'
 $ErrorFolder = Join-Path $TestDir 'Fehlermeldung'
 $OldInstallDir = Join-Path $TestDir 'Programme\Craft Updater'
 # Take the real architecture patterns from the updater.
@@ -648,7 +649,8 @@ try {
         ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+\$searchIndex = 0')
     }
     Test-Case 'Window: updater notice link is wired up and opens only the checked page' {
-        ($UpdaterText -match [regex]::Escape('$updateLink.Add_LinkClicked({ if ($null -ne $sync.UpdaterUpdate) { [void](Open-UpdaterReleasePage ([string]$sync.UpdaterUpdate.Url)) } })')) -and
+        ($UpdaterText -match [regex]::Escape('$choice = Show-UpdaterNoticeDialog $form ([string]$notice.Version)')) -and
+        ($UpdaterText -match [regex]::Escape("if (`$choice -eq 'open') { [void](Open-UpdaterReleasePage ([string]`$notice.Url)) }")) -and
         ($UpdaterText -match [regex]::Escape('$footerLink,$updateLink,$header')) -and ($UpdaterText -match [regex]::Escape('UpdaterUpdate = $null'))
     }
     Test-Case 'Window: "What is new" button is wired up' {
@@ -689,6 +691,40 @@ try {
     }
     Test-Case 'No leftover plans for a signed .exe in the script comments' {
         -not ($UpdaterText -match 'until there is a signed \.exe') -and -not ($UpdaterText -match 'replaced later by a signed \.exe')
+    }
+
+    Write-Host "`n[17] New in 5.9: skip this Craft Updater version"
+    function Clear-Skipped { Remove-Item -LiteralPath $SkippedUpdaterPath -Force -ErrorAction SilentlyContinue }
+    Test-Case 'Skip: nothing skipped without a file' { Clear-Skipped; $null -eq (Read-SkippedUpdaterVersion) }
+    Test-Case 'Skip: a skipped version is remembered' {
+        Clear-Skipped
+        (Save-SkippedUpdaterVersion 'v99.0') -and ((Read-SkippedUpdaterVersion) -eq [version]'99.0')
+    }
+    Test-Case 'Skip: the skipped version gives no notice, an even newer one does' {
+        Clear-Skipped; [void](Save-SkippedUpdaterVersion 'v99.0')
+        $same = Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0' })
+        $newer = Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0.1' })
+        $result = ($null -eq $same) -and ($null -ne $newer) -and ($newer.Version -eq 'v99.0.1')
+        Clear-Skipped; $result
+    }
+    Test-Case 'Skip: only plain version numbers are stored' {
+        Clear-Skipped
+        -not (Save-SkippedUpdaterVersion '99.0') -and -not (Save-SkippedUpdaterVersion 'v99.0; Remove-Item x') -and
+        -not (Save-SkippedUpdaterVersion '') -and -not (Test-Path -LiteralPath $SkippedUpdaterPath)
+    }
+    Test-Case 'Skip: a broken or odd file is ignored and the notice shows' {
+        [void](New-Item -ItemType Directory -Path $Root -Force)
+        [IO.File]::WriteAllText($SkippedUpdaterPath,'not json')
+        $broken = Read-SkippedUpdaterVersion
+        [IO.File]::WriteAllText($SkippedUpdaterPath,'{"Version":"latest"}')
+        $odd = Read-SkippedUpdaterVersion
+        $u = Test-UpdaterNotice ([pscustomobject]@{ tag_name='v99.0' })
+        Clear-Skipped
+        ($null -eq $broken) -and ($null -eq $odd) -and ($null -ne $u)
+    }
+    Test-Case 'Window: skipping hides the notice for this window too' {
+        ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
+        ($UpdaterText -match [regex]::Escape("'skip'"))
     }
 
 } finally {

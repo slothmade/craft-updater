@@ -49,7 +49,9 @@ HILFE UND ENTFERNEN
   (Benutzername und Computername sind darin unkenntlich gemacht).
   Bei einem Sicherheitsfehler installiert er nichts. Bitte nichts erzwingen.
 - Neue Version: Gibt es eine, steht unten rechts im Fenster "Neue
-  Craft-Updater-Version ... verfügbar" (Klick öffnet die Download-Seite).
+  Craft-Updater-Version ... verfügbar". Ein Klick darauf bietet an:
+  Download-Seite öffnen, "Diese Version überspringen" (Hinweis kommt erst
+  bei einer noch neueren Version wieder) oder "Später".
   Von https://github.com/slothmade/craft-updater/releases
   herunterladen, alten Ordner löschen, neue ZIP entpacken.
 - Entfernen (deine Craft-Programme bleiben installiert). Lösche:

@@ -157,6 +157,8 @@ $RecoveryDir = Join-Path $Reports 'Recovery'
 $CacheRoot = Join-Path $Root 'ReleaseCache'
 $CooldownPath = Join-Path $CacheRoot 'RateLimit.json'
 $HistoryPath = Join-Path $Reports 'History.jsonl'
+# "Skip this version" for the notice about a newer Craft Updater (only the version number).
+$SkippedUpdaterPath = Join-Path $Root 'SkippedUpdaterVersion.json'
 # Local error folder next to the package files.
 $ErrorFolder = Join-Path $ScriptDirectory (L 'Fehlermeldung' 'Error reports')
 $ErrorReportPrefix = L 'Fehler-' 'Error-'
@@ -531,6 +533,12 @@ function Find-UpdaterUpdate {
         $remote = Parse-Version $tag
         $local = Parse-Version $localText
         if ($null -eq $remote -or $null -eq $local -or $remote -le $local) { return }
+        # The user chose "Skip this version": stay quiet until an even newer version appears.
+        $skipped = Read-SkippedUpdaterVersion
+        if ($null -ne $skipped -and $remote -le $skipped) {
+            Write-Host ((L 'Neue Craft-Updater-Version {0} wird uebersprungen (deine Wahl).' 'New Craft Updater version {0} is skipped (your choice).') -f $tag) -ForegroundColor DarkGray
+            return
+        }
         # Build the address ourselves instead of trusting a link from the answer.
         $url = 'https://github.com/' + $UpdaterOwner + '/' + $UpdaterRepo + '/releases/tag/' + $tag
         if (-not (Test-UpdaterReleaseUrl $url)) { return }
@@ -540,6 +548,27 @@ function Find-UpdaterUpdate {
     } catch {
         Write-Host ((L 'Pruefung auf neue Craft-Updater-Version nicht moeglich: ' 'Could not check for a new Craft Updater version: ') + $_.Exception.Message) -ForegroundColor DarkGray
     }
+}
+function Read-SkippedUpdaterVersion {
+    # Version the user chose to skip, or $null. A missing or odd file simply means: nothing skipped.
+    try {
+        if (-not (Test-Path -LiteralPath $SkippedUpdaterPath -PathType Leaf)) { return $null }
+        $data = Get-Content -LiteralPath $SkippedUpdaterPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $text = [string]$data.Version
+        if ($text -notmatch '^v\d+(\.\d+){1,3}$') { return $null }
+        return (Parse-Version $text)
+    } catch { return $null }
+}
+function Save-SkippedUpdaterVersion([string]$version) {
+    # Remembers "Skip this version". Only a plain version number like v5.10 is stored.
+    if ($version -notmatch '^v\d+(\.\d+){1,3}$') { return $false }
+    try {
+        $dir = Split-Path -Parent $SkippedUpdaterPath
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $json = ConvertTo-Json -InputObject ([ordered]@{ Version=$version; SavedAt=[datetimeoffset]::Now.ToString('o') })
+        [IO.File]::WriteAllText($SkippedUpdaterPath,$json,[Text.UTF8Encoding]::new($false))
+        return $true
+    } catch { return $false }
 }
 function Write-UpdaterNotice {
     if ($null -eq $State.UpdaterUpdate) { return }
@@ -1483,6 +1512,54 @@ function Show-ReleaseNotesDialog($owner,[string]$title,[string]$body,[string]$ur
     $dlg.Add_Shown({ $box.SelectionStart = 0; $box.SelectionLength = 0; [void]$btnOk.Focus() })
     try { [void]$dlg.ShowDialog($owner) } finally { $dlg.Dispose() }
 }
+function Show-UpdaterNoticeDialog($owner,[string]$version) {
+    # Click on "New Craft Updater version available": open the page, skip this version or later.
+    # Returns 'open', 'skip' or 'later'. Nothing is downloaded or installed here.
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Craft Updater ' + $version
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MinimizeBox = $false
+    $dlg.MaximizeBox = $false
+    $dlg.ShowInTaskbar = $false
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    if ($null -ne $owner -and $null -ne $owner.Icon) { $dlg.Icon = $owner.Icon }
+    $text = New-Object System.Windows.Forms.Label
+    $text.AutoSize = $false
+    $text.Location = New-Object System.Drawing.Point(14,14)
+    $text.Text = ((L 'Auf GitHub gibt es Craft Updater {0}. Du nutzt v{1}.' 'Craft Updater {0} is available on GitHub. You are using v{1}.') -f $version,$UpdaterVersion) + "`n`n" +
+        (L 'Die neue Version lädst du selbst von der Download-Seite (ZIP entpacken, alten Ordner löschen). Es wird nichts automatisch heruntergeladen oder installiert.' 'You download the new version yourself from the download page (extract the ZIP, delete the old folder). Nothing is downloaded or installed automatically.') + "`n`n" +
+        (L '"Diese Version überspringen" blendet den Hinweis aus, bis eine noch neuere Version erscheint.' '"Skip this version" hides the notice until an even newer version comes out.')
+    $measured = [System.Windows.Forms.TextRenderer]::MeasureText($text.Text,$dlg.Font,(New-Object System.Drawing.Size(452,0)),[System.Windows.Forms.TextFormatFlags]::WordBreak)
+    $text.Size = New-Object System.Drawing.Size(452,($measured.Height + 6))
+    $y = 14 + $text.Height + 14
+    $btnOpen = New-Object System.Windows.Forms.Button
+    $btnOpen.Text = (L 'Download-Seite öffnen' 'Open download page')
+    $btnOpen.Location = New-Object System.Drawing.Point(14,$y)
+    $btnOpen.Size = New-Object System.Drawing.Size(160,30)
+    $btnOpen.DialogResult = [System.Windows.Forms.DialogResult]::Yes
+    $btnSkip = New-Object System.Windows.Forms.Button
+    $btnSkip.Text = (L 'Diese Version überspringen' 'Skip this version')
+    $btnSkip.Location = New-Object System.Drawing.Point(182,$y)
+    $btnSkip.Size = New-Object System.Drawing.Size(180,30)
+    $btnSkip.DialogResult = [System.Windows.Forms.DialogResult]::No
+    $btnLater = New-Object System.Windows.Forms.Button
+    $btnLater.Text = (L 'Später' 'Later')
+    $btnLater.Location = New-Object System.Drawing.Point(370,$y)
+    $btnLater.Size = New-Object System.Drawing.Size(96,30)
+    $btnLater.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $dlg.ClientSize = New-Object System.Drawing.Size(480,($y + 44))
+    $dlg.AcceptButton = $btnOpen
+    $dlg.CancelButton = $btnLater
+    $dlg.Controls.AddRange(@($text,$btnOpen,$btnSkip,$btnLater))
+    $answer = [System.Windows.Forms.DialogResult]::Cancel
+    try { $answer = $dlg.ShowDialog($owner) } finally { $dlg.Dispose() }
+    switch ($answer) {
+        ([System.Windows.Forms.DialogResult]::Yes) { return 'open' }
+        ([System.Windows.Forms.DialogResult]::No)  { return 'skip' }
+        default { return 'later' }
+    }
+}
 function Format-ReleaseNotes([string]$markdown,[int]$maxLength=4000,[int]$maxLines=60) {
     # Turns GitHub release notes (Markdown) into short plain text for the "What's new" window.
     # The full notes are always linked below the text.
@@ -1837,8 +1914,17 @@ function Start-CraftWindow {
     $updateLink.Anchor = 'Bottom,Right'
     $updateLink.Visible = $false
     $updateTip = New-Object System.Windows.Forms.ToolTip
-    $updateTip.SetToolTip($updateLink,(L 'Öffnet die Download-Seite auf GitHub. Es wird nichts automatisch heruntergeladen oder installiert.' 'Opens the download page on GitHub. Nothing is downloaded or installed automatically.'))
-    $updateLink.Add_LinkClicked({ if ($null -ne $sync.UpdaterUpdate) { [void](Open-UpdaterReleasePage ([string]$sync.UpdaterUpdate.Url)) } })
+    $updateTip.SetToolTip($updateLink,(L 'Download-Seite öffnen oder diese Version überspringen. Es wird nichts automatisch heruntergeladen oder installiert.' 'Open the download page or skip this version. Nothing is downloaded or installed automatically.'))
+    $updateLink.Add_LinkClicked({
+        $notice = $sync.UpdaterUpdate
+        if ($null -eq $notice) { return }
+        $choice = Show-UpdaterNoticeDialog $form ([string]$notice.Version)
+        if ($choice -eq 'open') { [void](Open-UpdaterReleasePage ([string]$notice.Url)) }
+        elseif ($choice -eq 'skip') {
+            # Hide the notice for good in this window (the timer only shows it while it is set).
+            if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }
+        }
+    })
 
     $btnReport = New-Object System.Windows.Forms.Button
     $btnReport.Text = (L 'Fehlerbericht öffnen' 'Open error report')

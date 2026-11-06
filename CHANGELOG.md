@@ -4,6 +4,7 @@
 
 - New: **MaterialCraft** is updated as well (now 15 Craft programs). Its installer goes through exactly the same checks as all others.
 - Window: after a successful update the column *Installed* shows the new version (before, it kept showing the old one until the next start). The window grows a little when there are more programs than fit into the list.
+- New: **Skip this version** for the notice about a new Craft Updater. A click on the notice now offers *Open download page*, *Skip this version* or *Later*. A skipped version stays quiet; the notice comes back for the next newer one. Only the version number is stored (`%LOCALAPPDATA%\CraftUpdater\SkippedUpdaterVersion.json`).
 - Tidied up script comments that still mentioned a planned signed .exe.
 
 ## 5.8.1
