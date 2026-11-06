@@ -94,6 +94,8 @@ function Test-Case([string]$Name,[scriptblock]$Body) {
     } catch {
         $Failures.Add($Name + ' -> exception: ' + $_.Exception.Message)
         Write-Host ('  FAILED  ' + $Name + ' -> exception: ' + $_.Exception.Message) -ForegroundColor Red
+        # Where it happened (line in the updater or in this file).
+        Write-Host ('          at ' + (($_.ScriptStackTrace -split "`n") | Select-Object -First 3) -join ' <- ') -ForegroundColor DarkGray
     }
 }
 function Get-ThrowMessage([scriptblock]$Body) {
