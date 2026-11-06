@@ -698,7 +698,7 @@ try {
     Test-Case 'Skip: nothing skipped without a file' { Clear-Skipped; $null -eq (Read-SkippedUpdaterVersion) }
     Test-Case 'Skip: a skipped version is remembered' {
         Clear-Skipped
-        (Save-SkippedUpdaterVersion 'v99.0') -and ((Read-SkippedUpdaterVersion) -eq [version]'99.0')
+        (Save-SkippedUpdaterVersion 'v99.0') -and ((Read-SkippedUpdaterVersion) -eq (Parse-Version '99.0'))
     }
     Test-Case 'Skip: the skipped version gives no notice, an even newer one does' {
         Clear-Skipped; [void](Save-SkippedUpdaterVersion 'v99.0')
