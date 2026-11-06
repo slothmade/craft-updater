@@ -1367,7 +1367,9 @@ function Invoke-FreshInstall([string[]]$names,[switch]$Approved) {
     if ($State.SecurityBlocked) { return }
     Set-GuiPhase 'Installieren'
     $installIndex=0
-    foreach ($e in @($State.Eligible)) {
+    # No @() around the list: on an empty generic list Windows PowerShell 5.1 throws
+    # "Argument types do not match".
+    foreach ($e in $State.Eligible) {
         $installIndex++
         if ($State.StopInstallBatch) { Add-Result $e.Item.Program.Name '' $e.Item.Latest 'Gesperrt' (L 'Vorheriger MSI-Fehler; weitere Installationen ausgesetzt' 'Previous MSI error; further installations suspended') $e.Item.File; continue }
         Set-GuiStatus ((L 'Installiere {0} ({1} von {2}) - bitte warten ...' 'Installing {0} ({1} of {2}) - please wait ...') -f $e.Item.Program.Name,$installIndex,$State.Eligible.Count) ($installIndex - 1) $State.Eligible.Count
