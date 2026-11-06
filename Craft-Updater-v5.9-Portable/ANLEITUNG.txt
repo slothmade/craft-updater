@@ -1,4 +1,4 @@
-﻿CRAFT UPDATER 5.8.1
+﻿CRAFT UPDATER 5.9
 =================
 (English: see INSTRUCTIONS.txt)
 
@@ -9,7 +9,7 @@ jedes Update vorher genau und installiert erst, wenn du es bestätigst.
 
 EINRICHTEN (einmal)
 -------------------
-1. Den Ordner "Craft-Updater-v5.8.1-Portable" aus der ZIP auf den Desktop
+1. Den Ordner "Craft-Updater-v5.9-Portable" aus der ZIP auf den Desktop
    ziehen. Nicht direkt in der ZIP starten.
 2. Tipp für schnellen Start: Rechtsklick auf "Craft-Updater-STARTEN.cmd"
    -> "Senden an" -> "Desktop (Verknüpfung erstellen)".

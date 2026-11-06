@@ -602,7 +602,7 @@ try {
     }
     Test-Case 'TextureCraft is in the program list (5.8.1)' {
         $tc = @($Programs | Where-Object { $_.Name -eq 'TextureCraft' })
-        ($Programs.Count -eq 14) -and ($tc.Count -eq 1) -and ($tc[0].Repo -eq 'texturecraft') -and
+        ($Programs.Count -ge 14) -and ($tc.Count -eq 1) -and ($tc[0].Repo -eq 'texturecraft') -and
         ('TextureCraft' -match $tc[0].Pattern) -and -not ('WordCraft' -match $tc[0].Pattern) -and
         ('texturecraft-0.3.2-windows-x64.msi' -match '(?i)(^|[._-])(x64|amd64|x86_64)([._-]|$)')
     }
@@ -654,6 +654,41 @@ try {
     Test-Case 'Window: "What is new" button is wired up' {
         ($UpdaterText -match [regex]::Escape('$btnNotes.Add_Click({ & $showNotes })')) -and ($UpdaterText -match [regex]::Escape('$list.Add_DoubleClick({ & $showNotes })')) -and
         ($UpdaterText -match [regex]::Escape("Notes = [hashtable]::Synchronized(@{})"))
+    }
+
+    Write-Host "`n[16] New in 5.9: MaterialCraft, updated version in the window, tidy comments"
+    Test-Case 'MaterialCraft is in the program list (5.9)' {
+        $mc = @($Programs | Where-Object { $_.Name -eq 'MaterialCraft' })
+        ($Programs.Count -eq 15) -and ($mc.Count -eq 1) -and ($mc[0].Repo -eq 'materialcraft') -and
+        ('MaterialCraft' -match $mc[0].Pattern) -and ('MaterialCraft 0.1.1' -match $mc[0].Pattern) -and
+        -not ('MaterialCraftX' -match $mc[0].Pattern) -and -not ('TextureCraft' -match $mc[0].Pattern) -and
+        ('materialcraft-0.1.1-windows-x64.msi' -match $X64Pattern)
+    }
+    Test-Case 'Program names, repositories and patterns are unique' {
+        $names = @($Programs | ForEach-Object { $_.Name }); $repos = @($Programs | ForEach-Object { $_.Repo })
+        $clash = @(foreach ($p in $Programs) { foreach ($q in $Programs) { if ($p.Name -ne $q.Name -and $q.Name -match $p.Pattern) { $p.Name + '~' + $q.Name } } })
+        (@($names | Sort-Object -Unique).Count -eq $names.Count) -and (@($repos | Sort-Object -Unique).Count -eq $repos.Count) -and ($clash.Count -eq 0)
+    }
+    Test-Case 'Window: after an update the new version is shown as installed' {
+        $done = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.2.0'; Latest='v0.3.2'; Status='Installiert - nachgeprueft' })
+        $reboot = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.2.0'; Latest='0.3.2'; Status='Installiert - Neustart erforderlich' })
+        ($done[0] -eq 'v0.3.2') -and ($done[1] -eq '') -and ($reboot[0] -eq 'v0.3.2') -and ($reboot[1] -eq '')
+    }
+    Test-Case 'Window: before or without an update the columns stay as they were' {
+        $ready = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.2.0'; Latest='0.3.2'; Status='Installationsbereit' })
+        $skip = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.2.0'; Latest='0.3.2'; Status='Nur Download' })
+        $fail = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.2.0'; Latest='0.3.2'; Status='Installationsfehler' })
+        $same = Get-RowVersionTexts ([pscustomobject]@{ Installed='0.3.2'; Latest='0.3.2'; Status='Aktuell' })
+        $none = Get-RowVersionTexts ([pscustomobject]@{ Installed=''; Latest='0.3.2'; Status='Nicht installiert' })
+        ($ready[0] -eq 'v0.2.0') -and ($ready[1] -eq 'v0.3.2') -and ($skip[1] -eq 'v0.3.2') -and ($fail[0] -eq 'v0.2.0') -and ($fail[1] -eq 'v0.3.2') -and
+        ($same[0] -eq 'v0.3.2') -and ($same[1] -eq '') -and ($none[0] -eq '') -and ($none[1] -eq '')
+    }
+    Test-Case 'Window: uses the column helper and grows for more than 14 programs' {
+        ($UpdaterText -match [regex]::Escape('$texts = Get-RowVersionTexts $row')) -and
+        ($UpdaterText -match [regex]::Escape('$extraRows = [Math]::Min([Math]::Max(0,$Programs.Count - 14),10)'))
+    }
+    Test-Case 'No leftover plans for a signed .exe in the script comments' {
+        -not ($UpdaterText -match 'until there is a signed \.exe') -and -not ($UpdaterText -match 'replaced later by a signed \.exe')
     }
 
 } finally {

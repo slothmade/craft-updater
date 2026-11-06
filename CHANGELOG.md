@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.9 (in progress)
+
+- New: **MaterialCraft** is updated as well (now 15 Craft programs). Its installer goes through exactly the same checks as all others.
+- Window: after a successful update the column *Installed* shows the new version (before, it kept showing the old one until the next start). The window grows a little when there are more programs than fit into the list.
+- Tidied up script comments that still mentioned a planned signed .exe.
+
 ## 5.8.1
 
 - New: **TextureCraft** is updated as well (now 14 Craft programs). Its installer goes through exactly the same checks as all others.

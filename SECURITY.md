@@ -57,7 +57,7 @@ Be aware of what these checks cannot do:
 Every release lists the SHA-256 of its ZIP file in `SHA256SUMS`. To check your download in PowerShell:
 
 ```powershell
-Get-FileHash .\Craft-Updater-v5.8.1-Portable.zip -Algorithm SHA256
+Get-FileHash .\Craft-Updater-v5.9-Portable.zip -Algorithm SHA256
 ```
 
 The value shown must be exactly the one in `SHA256SUMS` on the release page.

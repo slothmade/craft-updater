@@ -1,4 +1,4 @@
-﻿# Craft Auto-Updater v5.8.1 Portable - Windows PowerShell 5.1
+﻿# Craft Auto-Updater v5.9 Portable - Windows PowerShell 5.1
 # Installs updates only after every security check has passed and after one explicit
 # approval (window: "Install" button plus confirmation; console: type YES / JA).
 #
@@ -28,7 +28,7 @@
 #   6. Security checks        - package checks, registry, installation approval
 #   7. Run phases             - search, preflight, install, report, maintenance
 #                               (no copy to Program Files: the updater runs straight
-#                               from the extracted folder until there is a signed .exe)
+#                               from the extracted folder)
 #   7b. Window                - user interface; the run itself happens unchanged in
 #                               the background (own runspace, same process)
 #   8. Start                  - mutex, choose mode, exit code
@@ -70,7 +70,7 @@ function L([string]$de,[string]$en) {
 # ============================================================================
 # 1. CONFIGURATION
 # ============================================================================
-$UpdaterVersion = '5.8.1'
+$UpdaterVersion = '5.9'
 # Project page (shown small at the bottom of the window).
 $ProjectUrl = 'https://github.com/slothmade/craft-updater'
 # Own releases: only used for the notice "new Craft Updater version available".
@@ -94,7 +94,8 @@ $Programs = @(
     @{Name='FigCraft';Repo='figcraft';Pattern='^FigCraft\b'},
     @{Name='SoundCraft';Repo='soundcraft';Pattern='^SoundCraft\b'},
     @{Name='CADCraft';Repo='cadcraft';Pattern='^CADCraft\b'},
-    @{Name='TextureCraft';Repo='texturecraft';Pattern='^TextureCraft\b'}
+    @{Name='TextureCraft';Repo='texturecraft';Pattern='^TextureCraft\b'},
+    @{Name='MaterialCraft';Repo='materialcraft';Pattern='^MaterialCraft\b'}
 )
 
 # Signature and publisher. The profile EKU was derived from previously approved, validly
@@ -111,7 +112,7 @@ $TimeoutSeconds = 120
 $InstallTimeoutSeconds = 1800
 $MinReserveBytes = 500MB
 # 60 minutes: new releases are detected after one hour at the latest.
-# 15 API requests per run (14 programs + this updater) stay far below the GitHub limit (60 per hour).
+# 16 API requests per run (15 programs + this updater) stay far below the GitHub limit (60 per hour).
 $CacheTtlMinutes = 60
 $Headers = @{'User-Agent'=('Craft-Updater-v' + $UpdaterVersion);'Accept'='application/vnd.github+json'}
 
@@ -1382,6 +1383,15 @@ function Format-VersionText([string]$version) {
     if ($v -match '^\d') { return 'v' + $v }
     return $v
 }
+function Get-RowVersionTexts($row) {
+    # Window columns "Installed" and "New" for one row.
+    # After a confirmed update the new version IS installed: show it under "Installed"
+    # and leave "New" empty (like "Up to date"). The results/history keep the old version.
+    $status = [string]$row.Status
+    if ($status -match '^Installiert') { return @((Format-VersionText ([string]$row.Latest)),'') }
+    $newText = $(if ($status -eq 'Aktuell' -or $status -eq 'Nicht installiert') { '' } else { Format-VersionText ([string]$row.Latest) })
+    return @((Format-VersionText ([string]$row.Installed)),$newText)
+}
 function Test-ReleaseNotesUrl([string]$url) {
     # Only the release page of a Craft program on GitHub may be opened or copied.
     return ($url -match '^https://github\.com/storytold/[A-Za-z0-9._-]+/releases/tag/[A-Za-z0-9._%+-]+$')
@@ -1861,6 +1871,11 @@ function Start-CraftWindow {
     $btnClose.Enabled = $false
 
     $form.Controls.AddRange(@($list,$mark,$status,$progress,$btnReport,$btnNotes,$btnInstall,$btnClose,$footerLink,$updateLink,$header))
+    # The layout above has room for 14 programs. With more, the window grows by one row each
+    # (at most 10) so that every program is visible without scrolling. Set AFTER adding the
+    # controls: the anchors then move the lower controls and stretch the list.
+    $extraRows = [Math]::Min([Math]::Max(0,$Programs.Count - 14),10)
+    if ($extraRows -gt 0) { $form.ClientSize = New-Object System.Drawing.Size(640,(548 + 20 * $extraRows)) }
 
     # --- Finish when the background run is done ---
     $finish = {
@@ -1912,8 +1927,9 @@ function Start-CraftWindow {
                 $row = $sync.Rows[$key]
                 $item = $ui.Items[[string]$key]
                 if ($null -eq $row -or $null -eq $item) { continue }
-                $inst = Format-VersionText ([string]$row.Installed)
-                $newText = $(if ($row.Status -eq 'Aktuell' -or $row.Status -eq 'Nicht installiert') { '' } else { Format-VersionText ([string]$row.Latest) })
+                $texts = Get-RowVersionTexts $row
+                $inst = $texts[0]
+                $newText = $texts[1]
                 $stText = Get-FriendlyStatus ([string]$row.Status)
                 $stCol = Get-StatusColor ([string]$row.Status)
                 $ui.Rank[[string]$key] = Get-SortRank ([string]$row.Status)
@@ -2126,7 +2142,7 @@ try {
 }
 
 # No self-deletion and no copy to Program Files: the updater runs from the extracted
-# folder (friendly to virus scanners). To be replaced later by a signed .exe.
+# folder (friendly to virus scanners).
 
 # Publish the exit code for the CMD launcher (or for the window).
 if ($null -ne $GuiSync) { $GuiSync.ExitCode = $State.ExitCode; return }
