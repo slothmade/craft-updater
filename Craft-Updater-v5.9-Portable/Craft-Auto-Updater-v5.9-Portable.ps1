@@ -779,7 +779,7 @@ function Assert-SafeMsiPath([string]$path) {
         $cursor = $parent
     }
 }
-function Assert-TrustedMsi([string]$path,[string]$expectedHash,$program,$registryApp,[version]$expectedVersion) {
+function Assert-TrustedMsi([string]$path,[string]$expectedHash,$program,$registryApp,[version]$expectedVersion,[switch]$FreshInstall) {
     # Every deviation here is a SECURITY ERROR and blocks the whole run.
     try {
         $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -817,7 +817,10 @@ function Assert-TrustedMsi([string]$path,[string]$expectedHash,$program,$registr
         $msiVersion = Parse-Version ([string]$metadata['ProductVersion'])
         if ($null -eq $msiVersion -or $msiVersion -ne $expectedVersion) { throw (L 'MSI-Produktversion weicht vom Release-Tag ab' 'MSI product version differs from the release tag') }
         if ((Norm-Publisher $org) -ne (Norm-Publisher $ExpectedPublisher)) { throw (L 'Zertifikat-Herausgeber entspricht nicht dem erwarteten Publisher' 'Certificate publisher does not match the expected publisher') }
-        if (-not (Test-AllowedRegistryPublisher ([string]$registryApp.Publisher))) { throw ((L 'Registry-Publisher ist nicht erlaubt: ' 'Registry publisher is not allowed: ') + [string]$registryApp.Publisher) }
+        if ($FreshInstall) {
+            # New installation: there is no installed entry to compare with - and there must be none.
+            if ($null -ne $registryApp) { throw (L 'Neuinstallation, aber ein Registry-Eintrag ist vorhanden' 'New installation, but a registry entry exists') }
+        } elseif (-not (Test-AllowedRegistryPublisher ([string]$registryApp.Publisher))) { throw ((L 'Registry-Publisher ist nicht erlaubt: ' 'Registry publisher is not allowed: ') + [string]$registryApp.Publisher) }
         # The signer is Inc, the MSI manufacturer may still be LLC. Any other value is rejected.
         if (-not (Test-AllowedRegistryPublisher ([string]$metadata['Manufacturer']))) {
             throw ((L 'MSI-Hersteller nicht freigegeben: ' 'MSI manufacturer not approved: ') + [string]$metadata['Manufacturer'])
@@ -961,6 +964,12 @@ function Test-InstallationCandidate($item) {
     # Never change the MSI context silently. Only confirmed HKLM MSI products.
     $registryPath=[string]$app.PSPath
     if ($registryPath -notmatch 'HKEY_LOCAL_MACHINE|HKLM:') { throw (L 'Bestehende Installation ist nicht eindeutig per-machine (HKLM)' 'Existing installation is not clearly per-machine (HKLM)') }
+    $scopeArgs=Get-MsiScopeArguments $md
+    return [pscustomobject]@{Item=$item; RegistryApp=$app; Check=$check; CurrentProductCode=$installedCode; ScopeArguments=$scopeArgs}
+}
+function Get-MsiScopeArguments($md) {
+    # Only per-machine installations. A dual-purpose MSI is asked for per-machine on the
+    # command line; anything else is refused.
     $allUsers=[string]$md.ALLUSERS
     $perUser=[string]$md.MSIINSTALLPERUSER
     $machineOnly=($allUsers -eq '1' -and $perUser -ne '1')
@@ -968,9 +977,38 @@ function Test-InstallationCandidate($item) {
     if (-not ($machineOnly -or $dualPurpose)) {
         throw ((L 'MSI-Installationskontext nicht freigegeben (ALLUSERS={0}; MSIINSTALLPERUSER={1})' 'MSI installation context not approved (ALLUSERS={0}; MSIINSTALLPERUSER={1})') -f $allUsers,$perUser)
     }
-    # Dual-purpose MSI: request per-machine only, via the command line.
-    $scopeArgs=if ($dualPurpose) { ' ALLUSERS=2 MSIINSTALLPERUSER=""' } else { '' }
-    return [pscustomobject]@{Item=$item; RegistryApp=$app; Check=$check; CurrentProductCode=$installedCode; ScopeArguments=$scopeArgs}
+    if ($dualPurpose) { return ' ALLUSERS=2 MSIINSTALLPERUSER=""' }
+    return ''
+}
+function Get-MsiRelatedProducts([string]$upgradeCode) {
+    # ProductCodes of installed products of this MSI family (also hidden ones).
+    $installer=$null
+    try {
+        $installer=New-Object -ComObject WindowsInstaller.Installer
+        return ,@($installer.RelatedProducts($upgradeCode) | ForEach-Object { [string]$_ })
+    } finally { Release-ComObject $installer }
+}
+function Find-InstalledEntries($program) {
+    # Fresh from the registry. For automatically found apps only entries from the Craft publisher.
+    $entries=Find-RegistryEntries @(Get-ItemProperty -Path $RegPaths -ErrorAction SilentlyContinue) $program.Pattern
+    if ($program.Discovered) { $entries=@($entries | Where-Object { Test-AllowedRegistryPublisher ([string]$_.Publisher) }) }
+    return ,@($entries)
+}
+function Test-FreshInstallCandidate($item) {
+    # Like Test-InstallationCandidate, for a program that is NOT installed yet. Instead of the
+    # upgrade checks it makes sure that really nothing of this program is installed.
+    # Package and path checks: deviations are security errors. All other reasons only affect
+    # this one program.
+    if (@(Find-InstalledEntries $item.Program).Count -gt 0) { throw (L 'Programm ist inzwischen installiert - keine Neuinstallation' 'The program is installed by now - no new installation') }
+    try { Assert-SafeMsiPath $item.File } catch { throw (Get-SecurityMessage $_) }
+    $check=Assert-TrustedMsi $item.File $item.ExpectedHash $item.Program $null $item.Version -FreshInstall
+    $md=$check.Metadata
+    # Nothing of this MSI family may be installed, not even hidden: that would be an upgrade
+    # or downgrade of something we have not checked, not a new installation.
+    if (@(Get-MsiRelatedProducts ([string]$md.UpgradeCode)).Count -gt 0) { throw (L 'Ein Produkt dieser MSI-Familie ist bereits installiert - keine Neuinstallation' 'A product of this MSI family is already installed - no new installation') }
+    if (Test-CraftProcessRunning $item $null) { throw (L 'Ein Programm mit diesem Namen laeuft gerade' 'A program with this name is running') }
+    $scopeArgs=Get-MsiScopeArguments $md
+    return [pscustomobject]@{Item=$item; RegistryApp=$null; Check=$check; CurrentProductCode=''; ScopeArguments=$scopeArgs}
 }
 function Test-InstalledProductIdentity([string]$productCode,[version]$expectedVersion) {
     $state=Get-MsiProductState $productCode
@@ -984,8 +1022,68 @@ function Test-InstalledProductIdentity([string]$productCode,[version]$expectedVe
 # 7. RUN PHASES
 # ============================================================================
 # (Removed: the copy to Program Files and the start-folder cleanup. The package files simply stay.)
+function New-PendingItem($program,$app,[string]$localText,[string]$remoteText,[version]$remote,[string]$file,[string]$expectedHash,$check,[bool]$fresh=$false) {
+    # Fresh = new installation of a program that is not installed yet (no upgrade).
+    return [pscustomobject]@{Program=$program; RegistryApp=$app; Local=$localText; Latest=$remoteText; Version=$remote; File=$file; ExpectedHash=$expectedHash; Check=$check; Fresh=$fresh}
+}
 function Add-PendingUpdate($program,$app,[string]$localText,[string]$remoteText,[version]$remote,[string]$file,[string]$expectedHash,$check) {
-    $State.Pending.Add([pscustomobject]@{Program=$program; RegistryApp=$app; Local=$localText; Latest=$remoteText; Version=$remote; File=$file; ExpectedHash=$expectedHash; Check=$check})
+    $State.Pending.Add((New-PendingItem $program $app $localText $remoteText $remote $file $expectedHash $check))
+}
+function Get-VerifiedInstaller($program,$release,$app,[string]$localText,[string]$remoteText,[version]$remote,[switch]$FreshInstall) {
+    # Download the installer of one release (or reuse an already downloaded one) and check it
+    # completely. Returns the checked item, or $null after recording why this program is skipped.
+    # Security errors are thrown; the caller records them.
+    $tempDir=$null
+    try {
+        $assets=@($release.assets | Where-Object { $_.state -eq 'uploaded' -and $_.name -match '(?i)\.msi$' -and $_.name -match $ArchPattern -and $_.name -notmatch '(?i)(^|[._-])(debug|test|symbols)([._-]|$)' })
+        if ($assets.Count -ne 1) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'Kein eindeutiger MSI-Installer' 'No single matching MSI installer'); return $null }
+        $asset=$assets[0]
+        $name=[string]$asset.name
+        if ($name -ne [IO.Path]::GetFileName($name) -or $name.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) { throw ($SecurityPrefix + (L 'Unsicherer Dateiname' 'Unsafe file name')) }
+        $digestMatch=[regex]::Match([string]$asset.digest,'(?i)^sha256:([a-f0-9]{64})$')
+        if (-not $digestMatch.Success) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'GitHub-Asset enthaelt keinen SHA256-Digest' 'GitHub asset has no SHA256 digest'); return $null }
+        $expectedHash=$digestMatch.Groups[1].Value.ToUpperInvariant()
+        $uri=[uri]$asset.browser_download_url
+        $required="/$Owner/$($program.Repo)/releases/download/"
+        if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or -not $uri.AbsolutePath.StartsWith($required,[StringComparison]::OrdinalIgnoreCase)) { throw ($SecurityPrefix + (L 'Unerwartete Download-URL' 'Unexpected download URL')) }
+        # The folder name comes exclusively from a verified .NET version.
+        $destinationDir=Join-Path (Join-Path $Verified $program.Name) ($remote.ToString())
+        [void](New-Item -ItemType Directory -Force -Path $destinationDir)
+        $destination=Join-Path $destinationDir $name
+
+        # File already downloaded (e.g. after NO): check it fully again instead of downloading again.
+        if (Test-Path -LiteralPath $destination -PathType Leaf) {
+            try {
+                $check=Assert-TrustedMsi $destination $expectedHash $program $app $remote -FreshInstall:$FreshInstall
+                Write-Host ((L '{0}: MSI bereits vorhanden, erneut vollstaendig geprueft (kein Download)' '{0}: MSI already present, fully checked again (no download)') -f $program.Name) -ForegroundColor DarkGray
+                Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'Vorhandene Datei: Hash, Signatur, Profil-EKU und MSI erneut geprueft' 'Existing file: hash, signature, profile EKU and MSI checked again') $destination $check.Hash $check.Signer
+                return (New-PendingItem $program $app $localText $remoteText $remote $destination $expectedHash $check $FreshInstall)
+            } catch {
+                # Never install it - discard and download fresh. The new file is fully checked.
+                Write-Host ((L '{0}: vorhandene MSI-Datei verworfen ({1}); lade neu' '{0}: existing MSI file discarded ({1}); downloading again') -f $program.Name,$_.Exception.Message) -ForegroundColor Yellow
+                $existing=Get-Item -LiteralPath $destination -Force -ErrorAction Stop
+                if (Test-IsReparsePoint $existing) { throw ($SecurityPrefix + (L 'Vorhandene MSI-Datei ist ein Link' 'Existing MSI file is a link')) }
+                Remove-Item -LiteralPath $destination -Force -ErrorAction Stop
+            }
+        }
+
+        $size=[long]$asset.size
+        if ($size -le 0) { throw ($SecurityPrefix + (L 'Ungueltige Asset-Groesse' 'Invalid asset size')) }
+        $disk=New-Object IO.DriveInfo([IO.Path]::GetPathRoot($Root))
+        if ($disk.AvailableFreeSpace -lt ($size + $MinReserveBytes)) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'Nicht genug freier Speicher' 'Not enough free disk space'); return $null }
+        $tempDir=Join-Path $Root ('stage-' + [guid]::NewGuid().ToString('N'))
+        [void](New-Item -ItemType Directory -Path $tempDir)
+        $tempFile=Join-Path $tempDir $name
+        Invoke-Retry $uri.AbsoluteUri $tempFile | Out-Null
+        if ((Get-Item -LiteralPath $tempFile).Length -ne $size) { throw ($SecurityPrefix + (L 'Downloadgroesse weicht von GitHub ab' 'Download size differs from GitHub')) }
+        $check=Assert-TrustedMsi $tempFile $expectedHash $program $app $remote -FreshInstall:$FreshInstall
+        # The hash is checked again before installation in Test-InstallationCandidate.
+        Move-Item -LiteralPath $tempFile -Destination $destination -ErrorAction Stop
+        Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'SHA256, Authenticode, Herausgeber, Profil-EKU und MSI-Metadaten OK; Profilpruefung bestanden' 'SHA256, Authenticode, publisher, profile EKU and MSI metadata OK; profile check passed') $destination $check.Hash $check.Signer
+        return (New-PendingItem $program $app $localText $remoteText $remote $destination $expectedHash $check $FreshInstall)
+    } finally {
+        if ($tempDir -and (Test-Path -LiteralPath $tempDir)) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
 }
 function Find-ProgramUpdate($program) {
     # Phase 1 for one program: compare versions, download or reuse the MSI, check it.
@@ -1014,53 +1112,8 @@ function Find-ProgramUpdate($program) {
         $note = [pscustomobject]@{ Version=$remoteText; Text=(Format-ReleaseNotes ([string]$release.body)); Url=[string]$release.html_url }
         $State.Notes[$program.Name] = $note
         if ($null -ne $GuiSync) { $GuiSync.Notes[$program.Name] = $note }
-        $assets=@($release.assets | Where-Object { $_.state -eq 'uploaded' -and $_.name -match '(?i)\.msi$' -and $_.name -match $ArchPattern -and $_.name -notmatch '(?i)(^|[._-])(debug|test|symbols)([._-]|$)' })
-        if ($assets.Count -ne 1) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'Kein eindeutiger MSI-Installer' 'No single matching MSI installer'); return }
-        $asset=$assets[0]
-        $name=[string]$asset.name
-        if ($name -ne [IO.Path]::GetFileName($name) -or $name.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) { throw ($SecurityPrefix + (L 'Unsicherer Dateiname' 'Unsafe file name')) }
-        $digestMatch=[regex]::Match([string]$asset.digest,'(?i)^sha256:([a-f0-9]{64})$')
-        if (-not $digestMatch.Success) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'GitHub-Asset enthaelt keinen SHA256-Digest' 'GitHub asset has no SHA256 digest'); return }
-        $expectedHash=$digestMatch.Groups[1].Value.ToUpperInvariant()
-        $uri=[uri]$asset.browser_download_url
-        $required="/$Owner/$($program.Repo)/releases/download/"
-        if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or -not $uri.AbsolutePath.StartsWith($required,[StringComparison]::OrdinalIgnoreCase)) { throw ($SecurityPrefix + (L 'Unerwartete Download-URL' 'Unexpected download URL')) }
-        # The folder name comes exclusively from a verified .NET version.
-        $destinationDir=Join-Path (Join-Path $Verified $program.Name) ($remote.ToString())
-        [void](New-Item -ItemType Directory -Force -Path $destinationDir)
-        $destination=Join-Path $destinationDir $name
-
-        # File already downloaded (e.g. after NO): check it fully again instead of downloading again.
-        if (Test-Path -LiteralPath $destination -PathType Leaf) {
-            try {
-                $check=Assert-TrustedMsi $destination $expectedHash $program $app $remote
-                Write-Host ((L '{0}: MSI bereits vorhanden, erneut vollstaendig geprueft (kein Download)' '{0}: MSI already present, fully checked again (no download)') -f $program.Name) -ForegroundColor DarkGray
-                Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'Vorhandene Datei: Hash, Signatur, Profil-EKU und MSI erneut geprueft' 'Existing file: hash, signature, profile EKU and MSI checked again') $destination $check.Hash $check.Signer
-                Add-PendingUpdate $program $app $localText $remoteText $remote $destination $expectedHash $check
-                return
-            } catch {
-                # Never install it - discard and download fresh. The new file is fully checked.
-                Write-Host ((L '{0}: vorhandene MSI-Datei verworfen ({1}); lade neu' '{0}: existing MSI file discarded ({1}); downloading again') -f $program.Name,$_.Exception.Message) -ForegroundColor Yellow
-                $existing=Get-Item -LiteralPath $destination -Force -ErrorAction Stop
-                if (Test-IsReparsePoint $existing) { throw ($SecurityPrefix + (L 'Vorhandene MSI-Datei ist ein Link' 'Existing MSI file is a link')) }
-                Remove-Item -LiteralPath $destination -Force -ErrorAction Stop
-            }
-        }
-
-        $size=[long]$asset.size
-        if ($size -le 0) { throw ($SecurityPrefix + (L 'Ungueltige Asset-Groesse' 'Invalid asset size')) }
-        $disk=New-Object IO.DriveInfo([IO.Path]::GetPathRoot($Root))
-        if ($disk.AvailableFreeSpace -lt ($size + $MinReserveBytes)) { Add-Result $program.Name $localText $remoteText 'Uebersprungen' (L 'Nicht genug freier Speicher' 'Not enough free disk space'); return }
-        $tempDir=Join-Path $Root ('stage-' + [guid]::NewGuid().ToString('N'))
-        [void](New-Item -ItemType Directory -Path $tempDir)
-        $tempFile=Join-Path $tempDir $name
-        Invoke-Retry $uri.AbsoluteUri $tempFile | Out-Null
-        if ((Get-Item -LiteralPath $tempFile).Length -ne $size) { throw ($SecurityPrefix + (L 'Downloadgroesse weicht von GitHub ab' 'Download size differs from GitHub')) }
-        $check=Assert-TrustedMsi $tempFile $expectedHash $program $app $remote
-        # The hash is checked again before installation in Test-InstallationCandidate.
-        Move-Item -LiteralPath $tempFile -Destination $destination -ErrorAction Stop
-        Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'SHA256, Authenticode, Herausgeber, Profil-EKU und MSI-Metadaten OK; Profilpruefung bestanden' 'SHA256, Authenticode, publisher, profile EKU and MSI metadata OK; profile check passed') $destination $check.Hash $check.Signer
-        Add-PendingUpdate $program $app $localText $remoteText $remote $destination $expectedHash $check
+        $item=Get-VerifiedInstaller $program $release $app $localText $remoteText $remote
+        if ($null -ne $item) { $State.Pending.Add($item) }
     } catch {
         $detail=$_.Exception.Message
         $status=if (Test-IsSecurityMessage $detail) { 'Sicherheitsfehler' } else { 'Fehler' }
@@ -1073,9 +1126,10 @@ function Invoke-Preflight {
     # Phase 2: check every verified download for installability.
     foreach ($item in $State.Pending) {
         try {
-            $elig=Test-InstallationCandidate $item
+            $elig=$(if ($item.Fresh) { Test-FreshInstallCandidate $item } else { Test-InstallationCandidate $item })
             [void]$State.Eligible.Add($elig)
-            Add-Result $item.Program.Name $item.Local $item.Latest 'Installationsbereit' (L 'Profil-EKU und MSI-Upgrade kompatibel; Profilpruefung bestanden' 'Profile EKU and MSI upgrade compatible; profile check passed') $item.File $item.ExpectedHash $elig.Check.Signer
+            $readyText=$(if ($item.Fresh) { (L 'Profil-EKU OK, nichts davon installiert; Profilpruefung bestanden' 'Profile EKU OK, nothing of it installed; profile check passed') } else { (L 'Profil-EKU und MSI-Upgrade kompatibel; Profilpruefung bestanden' 'Profile EKU and MSI upgrade compatible; profile check passed') })
+            Add-Result $item.Program.Name $item.Local $item.Latest 'Installationsbereit' $readyText $item.File $item.ExpectedHash $elig.Check.Signer
         } catch {
             $message=$_.Exception.Message
             if (Test-IsSecurityMessage $message) {
@@ -1122,7 +1176,7 @@ function Install-LockedUpdate($e) {
     $item=$e.Item
     $name=$item.Program.Name
     # Repeat ALL checks right before the installation.
-    try { $recheck=Test-InstallationCandidate $item }
+    try { $recheck=$(if ($item.Fresh) { Test-FreshInstallCandidate $item } else { Test-InstallationCandidate $item }) }
     catch {
         $message=$_.Exception.Message
         if (Test-IsSecurityMessage $message) {
@@ -1182,6 +1236,7 @@ function Install-LockedUpdate($e) {
         Test-InstalledProductIdentity ([string]$recheck.Check.Metadata.ProductCode) $item.Version
         if ($code -eq 3010) { $State.RebootRequired=$true }
         $status= if ($code -eq 3010) { 'Installiert - Neustart erforderlich' } else { 'Installiert - nachgeprueft' }
+        if ($item.Fresh) { $status=$status -replace '^Installiert','Installiert (neu)' }
         Add-Result $name $item.Local $item.Latest $status ('ExitCode '+$code+'; Log: '+$msiLog+'; Restore-Info: '+$recovery) $item.File $item.ExpectedHash $recheck.Check.Signer
         return $true
     } catch {
@@ -1257,6 +1312,65 @@ function Invoke-Installation {
         Install-EligibleUpdate $e
     }
     Set-GuiStatus (L 'Installation abgeschlossen.' 'Installation finished.') $State.Eligible.Count $State.Eligible.Count
+    Set-GuiPhase 'Fertig'
+}
+function Get-FreshInstallChoices {
+    # Programs that may be offered for a new installation: not installed in this run, and
+    # only if this run found no security error.
+    if ($State.SecurityBlocked -or @($State.Results | Where-Object { $_.Status -eq 'Sicherheitsfehler' }).Count -gt 0) { return ,@() }
+    $lastByName=@{}
+    foreach ($result in $State.Results) { $lastByName[[string]$result.Program]=$result }
+    return ,@(foreach ($program in $Programs) {
+        $last=$lastByName[[string]$program.Name]
+        if ($null -ne $last -and $last.Status -eq 'Nicht installiert') { [string]$program.Name }
+    })
+}
+function Invoke-FreshInstall([string[]]$names,[switch]$Approved) {
+    # New installation of Craft programs that are not installed yet. Only called after the user
+    # ticked them in the window and answered the separate question with Yes (-Approved).
+    # Exactly the same checks as for updates; one security error stops everything.
+    if (-not $Approved -or $NurPruefen) { return }
+    $allowed=@(Get-FreshInstallChoices)
+    $wanted=@($names | Where-Object { $allowed -contains [string]$_ } | Select-Object -Unique)
+    if ($wanted.Count -eq 0) { return }
+    if (-not (Test-IsAdmin)) {
+        foreach ($name in $wanted) { Add-Result $name '' '' 'Gesperrt' (L 'Administratorrechte fehlen' 'Administrator rights missing') }
+        return
+    }
+    $State.Pending.Clear(); $State.Eligible.Clear()
+    Set-GuiPhase 'Neuinstallation'
+    $index=0
+    foreach ($name in $wanted) {
+        $program=@($Programs | Where-Object { [string]$_.Name -eq $name })[0]
+        Set-GuiStatus ((L 'Lade und prüfe {0} ({1} von {2}) ...' 'Downloading and checking {0} ({1} of {2}) ...') -f $name,($index + 1),$wanted.Count) $index $wanted.Count
+        $index++
+        $remoteText=''
+        try {
+            if (@(Find-InstalledEntries $program).Count -gt 0) { Add-Result $name '' '' 'Uebersprungen' (L 'Ist inzwischen installiert' 'Is installed by now'); continue }
+            $release=Get-ReleaseCached $program.Repo
+            if ($release.draft -or $release.prerelease) { Add-Result $name '' '' 'Uebersprungen' (L 'Nicht stabiles Release' 'Not a stable release'); continue }
+            $remoteText=[string]$release.tag_name
+            $remote=Parse-Version $remoteText
+            if ($null -eq $remote) { Add-Result $name '' $remoteText 'Uebersprungen' (L 'Release-Tag nicht vergleichbar' 'Release tag not comparable'); continue }
+            $item=Get-VerifiedInstaller $program $release $null '' $remoteText $remote -FreshInstall
+            if ($null -ne $item) { $State.Pending.Add($item) }
+        } catch {
+            $detail=$_.Exception.Message
+            $status=if (Test-IsSecurityMessage $detail) { 'Sicherheitsfehler' } else { 'Fehler' }
+            Add-Result $name '' $remoteText $status $detail
+        }
+    }
+    Invoke-Preflight
+    if ($State.SecurityBlocked) { return }
+    Set-GuiPhase 'Installieren'
+    $installIndex=0
+    foreach ($e in @($State.Eligible)) {
+        $installIndex++
+        if ($State.StopInstallBatch) { Add-Result $e.Item.Program.Name '' $e.Item.Latest 'Gesperrt' (L 'Vorheriger MSI-Fehler; weitere Installationen ausgesetzt' 'Previous MSI error; further installations suspended') $e.Item.File; continue }
+        Set-GuiStatus ((L 'Installiere {0} ({1} von {2}) - bitte warten ...' 'Installing {0} ({1} of {2}) - please wait ...') -f $e.Item.Program.Name,$installIndex,$State.Eligible.Count) ($installIndex - 1) $State.Eligible.Count
+        Install-EligibleUpdate $e
+    }
+    Set-GuiStatus (L 'Neuinstallation abgeschlossen.' 'New installation finished.') $State.Eligible.Count $State.Eligible.Count
     Set-GuiPhase 'Fertig'
 }
 function Protect-ReportText([string]$text,[string]$userName=$env:USERNAME,[string]$computerName=$env:COMPUTERNAME,[string]$userProfile=$env:USERPROFILE) {
@@ -1343,13 +1457,15 @@ function Write-RunSummary {
     # Up to date, not installed and a deliberate NO are not problems.
     $failed=@($summary | Where-Object { $_.Status -match 'Fehler' })
     $skipped=@($summary | Where-Object { $_.Status -in @('Nur Download','Uebersprungen','Gesperrt') })
-    $updatedCount=@($summary | Where-Object { $_.Status -match '^Installiert' }).Count
+    $updatedCount=@($summary | Where-Object { $_.Status -match '^Installiert - ' }).Count
+    $freshCount=@($summary | Where-Object { $_.Status -match '^Installiert \(neu\)' }).Count
     $currentCount=@($summary | Where-Object { $_.Status -eq 'Aktuell' }).Count
     $missingCount=@($summary | Where-Object { $_.Status -eq 'Nicht installiert' }).Count
     $readyCount=@($summary | Where-Object { $_.Status -eq 'Update bereit (Pruefmodus)' }).Count
     $rejectedCount=@($summary | Where-Object { $_.Status -eq 'Update abgelehnt' }).Count
     if ($failed.Count -gt 0 -or $skipped.Count -gt 0 -or $State.InstallerFailures -gt 0) { $State.ExitCode = 1 }
     Write-Host ((L 'Erfolgreich aktualisiert: {0} | Bereits aktuell: {1} | Nicht installiert: {2} | Bewusst abgelehnt: {3} | Probleme: {4}' 'Updated: {0} | Already up to date: {1} | Not installed: {2} | Declined: {3} | Problems: {4}') -f $updatedCount,$currentCount,$missingCount,$rejectedCount,$failed.Count)
+    if ($freshCount -gt 0) { Write-Host ((L 'Neu installiert: {0}' 'Newly installed: {0}') -f $freshCount) -ForegroundColor Green }
     if ($readyCount -gt 0) { Write-Host ((L 'Im Pruefmodus bereit: {0}' 'Ready in check-only mode: {0}') -f $readyCount) }
     if ($skipped.Count -gt 0) { Write-Host ((L 'Weitere blockierte/uebersprungene Updates: {0}' 'Other blocked/skipped updates: {0}') -f $skipped.Count) -ForegroundColor Yellow }
     if ($rejectedCount -gt 0) { Write-Host ((L 'Installationsfreigabe nicht erteilt: {0} Update(s) bewusst abgelehnt; keine Installation dieser Updates.' 'Approval not given: {0} update(s) declined; these updates were not installed.') -f $rejectedCount) -ForegroundColor Yellow }
@@ -1357,7 +1473,7 @@ function Write-RunSummary {
     $attention=@($failed + $skipped)
     if ($null -ne $GuiSync) {
         $GuiSync.Summary = [pscustomobject]@{
-            Updated=$updatedCount; Current=$currentCount; Missing=$missingCount; Rejected=$rejectedCount
+            Updated=$updatedCount; Fresh=$freshCount; Current=$currentCount; Missing=$missingCount; Rejected=$rejectedCount
             Problems=$failed.Count; Skipped=$skipped.Count; Reboot=[bool]$State.RebootRequired
             SecurityBlocked=[bool]$State.SecurityBlocked; BatchStopped=[bool]$State.StopInstallBatch
         }
@@ -1694,6 +1810,8 @@ function Get-FriendlyStatus([string]$status) {
         '^Installationsbereit$'                { return (L 'Bereit zur Installation' 'Ready to install') }
         '^Update bereit \(Pruefmodus\)$'       { return (L 'Bereit (nur geprüft)' 'Ready (check only)') }
         '^Installiert - nachgeprueft$'         { return (L 'Aktualisiert' 'Updated') }
+        '^Installiert \(neu\) - nachgeprueft$'  { return (L 'Neu installiert' 'Newly installed') }
+        '^Installiert \(neu\) - Neustart erforderlich$' { return (L 'Neu installiert - Neustart nötig' 'Newly installed - restart needed') }
         '^Installiert - Neustart erforderlich$' { return (L 'Aktualisiert - Neustart nötig' 'Updated - restart needed') }
         '^Update abgelehnt$'                   { return (L 'Update nicht installiert' 'Update not installed') }
         '^(Nur Download|Uebersprungen)$'       { return (L 'Diesmal übersprungen' 'Skipped this time') }
@@ -1722,13 +1840,14 @@ function Get-SummaryText($summary,[string]$crash) {
     $text = ''
     $symbol = ''
     if ($summary.Updated -gt 0) { $text = ((L '{0} Programm(e) aktualisiert. ' '{0} program(s) updated. ') -f $summary.Updated) }
+    if ($summary.Fresh -gt 0) { $text += ((L '{0} Programm(e) neu installiert. ' '{0} program(s) newly installed. ') -f $summary.Fresh) }
     if ($summary.Problems -gt 0 -or $summary.Skipped -gt 0) {
         $text += ((L 'Bei {0} Programm(en) hat es nicht geklappt - siehe Fehlerbericht.' '{0} program(s) did not work out - see the error report.') -f ($summary.Problems + $summary.Skipped))
         $color = [System.Drawing.Color]::DarkOrange
     } elseif ($summary.Rejected -gt 0) {
         $text += (L 'Die Updates wurden nicht installiert. Beim nächsten Start werden sie wieder angeboten.' 'The updates were not installed. They will be offered again next time.')
         $color = [System.Drawing.Color]::DarkOrange
-    } elseif ($summary.Updated -gt 0) {
+    } elseif ($summary.Updated -gt 0 -or $summary.Fresh -gt 0) {
         $text = (L 'Fertig! ' 'Done! ') + $text
         $color = [System.Drawing.Color]::ForestGreen
         $symbol = [string][char]0x2713

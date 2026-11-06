@@ -55,7 +55,7 @@ if (-not $X64Pattern -or -not $X86Pattern) { throw 'Architecture patterns not fo
 $Platform = 'x64'; $ArchPattern = $X64Pattern
 
 # --- Replacements for functions that need the network, registry or Windows Installer ---
-$Fake = @{ Repos = @(); RepoError = $false; Release = $null; CandidateError = @{}; Language = '1033'; Answer = ''; Asked = 0; ProbeLock = $false; LockSeen = $false }
+$Fake = @{ FreshChecked = 0; InstalledNow = @(); Repos = @(); RepoError = $false; Release = $null; CandidateError = @{}; Language = '1033'; Answer = ''; Asked = 0; ProbeLock = $false; LockSeen = $false }
 function Test-IsAdmin { return $true }
 # Replaces user input; counts how often it was asked.
 function Read-Host([string]$Prompt) { $Fake.Asked++; return $Fake.Answer }
@@ -73,6 +73,15 @@ function Test-InstallationCandidate($item) {
     if ($message) { throw $message }
     return [pscustomobject]@{ Item=$item; Check=[pscustomobject]@{ Signer='Learning Machines Inc' } }
 }
+
+# New installation (5.9): same idea as above, counts how often it was called.
+function Test-FreshInstallCandidate($item) {
+    $Fake.FreshChecked++
+    $message = $Fake.CandidateError[$item.Program.Name]
+    if ($message) { throw $message }
+    return [pscustomobject]@{ Item=$item; Check=[pscustomobject]@{ Signer='Learning Machines Inc' } }
+}
+function Find-InstalledEntries($program) { return ,@($Fake.InstalledNow | Where-Object { [string]$_.DisplayName -match $program.Pattern }) }
 
 # --- Test framework ---
 $Passed = 0
@@ -818,6 +827,80 @@ try {
         ($UpdaterText -match 'function Invoke-UpdateRun \{\s+try \{\s+Find-UpdaterUpdate\s+Find-NewCraftApps')
     }
     $Programs = $ProgramsBackup
+
+    Write-Host "`n[19] New in 5.9: new installation of Craft programs (checks and flow)"
+    function Set-FreshRun {
+        Reset-State; $Fake.FreshChecked = 0; $Fake.InstalledNow = @()
+        Add-Result 'WordCraft' '0.12.0' 'v0.12.0' 'Aktuell' 'x'
+        Add-Result 'FigCraft' '' '' 'Nicht installiert' 'x'
+    }
+    $RealVerifiedInstaller = ${function:Get-VerifiedInstaller}
+    function Get-VerifiedInstaller($program,$release,$app,[string]$localText,[string]$remoteText,[version]$remote,[switch]$FreshInstall) {
+        $script:VerifiedCalls++
+        $item = New-FakeInstaller (New-FakeItem $program.Name)
+        return (New-PendingItem $program $null '' 'v0.14.0' ([version]'0.14.0.0') $item.File ('A'*64) $null ([bool]$FreshInstall))
+    }
+    Test-Case 'Fresh: only programs that are not installed are offered' {
+        Set-FreshRun
+        $c = @(Get-FreshInstallChoices)
+        ($c.Count -eq 1) -and ($c[0] -eq 'FigCraft')
+    }
+    Test-Case 'Fresh: nothing is offered after a security error' {
+        Set-FreshRun; Add-Result 'GridCraft' '0.1' 'v0.2' 'Sicherheitsfehler' 'x'
+        @(Get-FreshInstallChoices).Count -eq 0
+    }
+    Test-Case 'Fresh: nothing happens without approval or in check-only mode' {
+        Set-FreshRun; $script:VerifiedCalls = 0; $count = $State.Results.Count
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        Invoke-FreshInstall @('FigCraft')
+        $NurPruefen = $true
+        Invoke-FreshInstall @('FigCraft') -Approved
+        ($State.Results.Count -eq $count) -and ($script:VerifiedCalls -eq 0)
+    }
+    Test-Case 'Fresh: programs that were not offered are ignored' {
+        Set-FreshRun; $script:VerifiedCalls = 0; $count = $State.Results.Count
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        Invoke-FreshInstall @('WordCraft','EvilCraft') -Approved
+        ($State.Results.Count -eq $count) -and ($script:VerifiedCalls -eq 0)
+    }
+    Test-Case 'Fresh: installed in the meantime = skipped, nothing downloaded' {
+        Set-FreshRun; $script:VerifiedCalls = 0
+        $Fake.InstalledNow = @([pscustomobject]@{ DisplayName='FigCraft'; Publisher='Learning Machines Inc' })
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        Invoke-FreshInstall @('FigCraft') -Approved
+        ((Get-LastResult).Status -eq 'Uebersprungen') -and ($script:VerifiedCalls -eq 0)
+    }
+    Test-Case 'Fresh: the downloaded installer goes through the pre-install check' {
+        Set-FreshRun; $script:VerifiedCalls = 0
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        $Fake.CandidateError['FigCraft'] = 'Programm laeuft'
+        Invoke-FreshInstall @('FigCraft') -Approved
+        ($script:VerifiedCalls -eq 1) -and ($Fake.FreshChecked -ge 1) -and ((Get-LastResult).Status -eq 'Nur Download') -and -not $State.SecurityBlocked
+    }
+    Test-Case 'Fresh: a security error blocks the new installation' {
+        Set-FreshRun
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        $Fake.CandidateError['FigCraft'] = ($SecurityPrefix + 'X')
+        Invoke-FreshInstall @('FigCraft') -Approved
+        $State.SecurityBlocked -and (@($State.Results | Where-Object { $_.Program -eq 'FigCraft' -and $_.Status -eq 'Sicherheitsfehler' }).Count -eq 1) -and
+        (@($State.Results | Where-Object { $_.Status -match '^Installiert' }).Count -eq 0)
+    }
+    Test-Case 'Fresh: install step and preflight use the new-installation check' {
+        ([regex]::Matches($UpdaterText,[regex]::Escape('if ($item.Fresh) { Test-FreshInstallCandidate $item } else { Test-InstallationCandidate $item }'))).Count -eq 2
+    }
+    Test-Case 'Fresh: only per-machine installers are accepted' {
+        ((Get-MsiScopeArguments @{ ALLUSERS='1'; MSIINSTALLPERUSER='' }) -eq '') -and
+        ((Get-MsiScopeArguments @{ ALLUSERS='2'; MSIINSTALLPERUSER='1' }) -like '*ALLUSERS=2*') -and
+        ((Get-ThrowMessage { Get-MsiScopeArguments @{ ALLUSERS=''; MSIINSTALLPERUSER='' } }) -like '*Installationskontext*')
+    }
+    Test-Case 'Fresh: texts say "newly installed" and are counted on their own' {
+        $row = Get-RowVersionTexts ([pscustomobject]@{ Installed=''; Latest='0.3.2'; Status='Installiert (neu) - nachgeprueft' })
+        $sum = Get-SummaryText ([pscustomobject]@{ Updated=0; Fresh=1; Current=3; Missing=0; Rejected=0; Problems=0; Skipped=0; Reboot=$false; SecurityBlocked=$false }) ''
+        ((Get-FriendlyStatus 'Installiert (neu) - nachgeprueft') -eq 'Neu installiert') -and
+        ((Get-FriendlyStatus 'Installiert (neu) - Neustart erforderlich') -eq 'Neu installiert - Neustart nötig') -and
+        ($row[0] -eq 'v0.3.2') -and ($sum[0] -like 'Fertig!*neu installiert*') -and ($sum[2] -ne '')
+    }
+    Set-Item -Path Function:\Get-VerifiedInstaller -Value $RealVerifiedInstaller
 
     Test-Case 'Window: skipping hides the notice for this window too' {
         ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
