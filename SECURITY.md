@@ -21,7 +21,7 @@ Only the latest release is supported. Please check that the problem still exists
 
 ## What Craft Updater checks
 
-Before anything is installed, every installer has to pass all of these checks:
+Before anything is installed, every installer has to pass all of these checks. This also applies to Craft apps that Craft Updater finds by itself (new `storytold` repositories ending in *craft*): being found only puts an app on the list, it is not a reason to trust its installer. For such apps, only uninstall entries from the Craft publisher count, so a different program with a similar name is never mistaken for one.
 
 1. **Where it comes from.** The download address must be `https://github.com/storytold/<app>/releases/download/...`. The file name must be a plain file name without any path.
 2. **That the file was not changed.** The SHA-256 of the downloaded file must match the digest GitHub publishes for it, and its size must match too.

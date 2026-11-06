@@ -25,7 +25,8 @@ START (every time)
    the ZIP -> Properties -> tick "Unblock" at the bottom -> OK, then
    extract it again. Please do not turn Smart App Control off.
 2. Windows asks for administrator rights -> "Yes".
-3. The window shows all Craft programs and their state.
+3. The window shows all Craft programs and their state. New Craft apps
+   are found automatically ("newly found") and checked the same way.
    If there are updates:
    -> "What's new?" shows what the update changes - for one program at
       a time: click a program in the list, then "What's new?" (or simply

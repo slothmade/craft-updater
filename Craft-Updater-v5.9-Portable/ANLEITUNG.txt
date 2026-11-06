@@ -24,7 +24,8 @@ STARTEN (jedes Mal)
    Rechtsklick auf die ZIP -> Eigenschaften -> unten "Zulassen" anhaken
    -> OK, dann neu entpacken. Smart App Control bitte nicht abschalten.
 2. Windows fragt nach Administratorrechten -> "Ja".
-3. Im Fenster siehst du alle Craft-Programme und ihren Stand.
+3. Im Fenster siehst du alle Craft-Programme und ihren Stand. Neue
+   Craft-Apps findet er selbst ("neu entdeckt") und prüft sie genauso.
    Gibt es Updates:
    -> "Was ist neu?" zeigt, was sich im Update ändert - immer für
       ein Programm: Programm in der Liste anklicken, dann "Was ist neu?"

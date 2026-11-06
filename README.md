@@ -29,6 +29,7 @@ That's it. Nothing is installed on your PC except the Craft updates you approve.
 ## What it does
 
 - **Updates only what you already have.** Programs that are not installed are skipped.
+- **Finds new Craft apps by itself.** When the Craft team publishes a new app (a `storytold` repository ending in *craft* with a Windows installer), it shows up in the list as *newly found* – no Craft Updater update needed. It goes through exactly the same checks as all other apps.
 - **Checks every update before installing it:** SHA-256, Windows code signature, publisher, certificate profile, MSI contents and the upgrade relationship to your installed version. Details in [SECURITY.md](SECURITY.md).
 - **Fails closed.** If one installer fails a security check, nothing at all is installed in that run.
 - **Locks the checked file** until Windows Installer has finished, so it cannot be swapped in between.
@@ -146,7 +147,7 @@ Craft Updater does not collect or send any personal data. This program will not 
 - While checking a code signature, Windows itself may contact Microsoft's certificate servers (for example to check whether a certificate was revoked). This is done by Windows, not by Craft Updater.
 - Everything else stays on your PC: the cache, logs, reports and a skipped Craft Updater version in `%LOCALAPPDATA%\CraftUpdater`, and error reports in the *Error reports* folder next to the updater.
 - In the error report your Windows user name and computer name are replaced, so you can share it. The detailed logs in `%LOCALAPPDATA%\CraftUpdater` are not changed and never leave your PC.
-- When you start Craft Updater, it asks GitHub for the latest releases of the Craft apps (this is what the program is for) and of Craft Updater itself (only to tell you about a new version). GitHub's own privacy statement applies to these requests: [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+- When you start Craft Updater, it asks GitHub for the latest releases of the Craft apps (this is what the program is for), for the list of public `storytold` repositories (at most every 12 hours, to find new Craft apps) and for the latest release of Craft Updater itself (only to tell you about a new version). GitHub's own privacy statement applies to these requests: [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 
 ## Security
 
