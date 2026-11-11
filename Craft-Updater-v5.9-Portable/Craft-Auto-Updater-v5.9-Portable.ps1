@@ -322,7 +322,8 @@ function Save-CraftReport([string]$path,[string]$content) {
     $temp=$path+'.tmp-'+[guid]::NewGuid().ToString('N')
     try {
         [IO.File]::WriteAllText($temp,$content,[Text.UTF8Encoding]::new($false))
-        Move-Item -LiteralPath $temp -Destination $path -ErrorAction Stop
+        # -Force: after a new installation the summary of the same run is written again.
+        Move-Item -LiteralPath $temp -Destination $path -Force -ErrorAction Stop
         return $true
     } catch {
         Write-Warning ((L 'Bericht konnte nicht gespeichert werden: ' 'Could not save report: ') + $path + ' - ' + $_.Exception.Message)
@@ -1408,6 +1409,8 @@ function Write-ErrorReport($errorRows,[string]$csv,[string]$json) {
         $folderNow=Get-Item -LiteralPath $ErrorFolder -Force -ErrorAction Stop
         if (-not $folderNow.PSIsContainer -or (Test-IsReparsePoint $folderNow)) { throw (L 'Fehlerordner ist kein normaler Ordner' 'Error folder is not a normal folder') }
         $errorFile=Join-Path $ErrorFolder ($ErrorReportPrefix + $RunId + '.txt')
+        # Second report of the same run (after a new installation): own file name.
+        if (Test-Path -LiteralPath $errorFile) { $errorFile=Join-Path $ErrorFolder ($ErrorReportPrefix + $RunId + '-' + (Get-Date -Format 'HHmmss') + '.txt') }
         $errorLines=New-Object 'System.Collections.Generic.List[string]'
         $errorLines.Add('CRAFT UPDATER v' + $UpdaterVersion + (L ' - FEHLERMELDUNG' ' - ERROR REPORT'))
         $errorLines.Add((L 'Zeit: ' 'Time: ')+(Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))
@@ -1581,6 +1584,32 @@ function Invoke-UpdateRun {
         Invoke-CraftMaintenance
         # Console: repeat the notice at the end so it does not scroll away.
         if ($null -eq $GuiSync) { Write-UpdaterNotice }
+    }
+    Invoke-FreshInstallOffer
+}
+function Invoke-FreshInstallOffer {
+    # Window only, after the normal run: programs that are not installed may be ticked and
+    # installed. The window asks its own Yes/No question (default No) before it hands over the
+    # names; closing the window or "Close" means: install nothing.
+    if ($null -eq $GuiSync -or $NurPruefen -or $State.SecurityBlocked) { return }
+    $choices = @(Get-FreshInstallChoices)
+    if ($choices.Count -eq 0) { return }
+    $GuiSync.FreshRequest = $null
+    $GuiSync.FreshOffer = [pscustomobject]@{ Id=[guid]::NewGuid().ToString('N'); Choices=[string[]]$choices }
+    Set-GuiPhase 'Angebot'
+    try {
+        while ($null -eq $GuiSync.FreshRequest) {
+            if ($GuiSync.WindowClosed) { return }
+            Start-Sleep -Milliseconds 150
+        }
+    } finally { $GuiSync.FreshOffer = $null }
+    $names = @($GuiSync.FreshRequest | ForEach-Object { [string]$_ } | Where-Object { $_ })
+    if ($names.Count -eq 0) { return }
+    Write-Host ((L 'Neuinstallation freigegeben fuer: {0}' 'New installation approved for: {0}') -f ($names -join ', ')) -ForegroundColor Cyan
+    try { Invoke-FreshInstall $names -Approved }
+    finally {
+        Write-RunSummary
+        Invoke-CraftMaintenance
     }
 }
 function Invoke-DiagnoseRun {
@@ -1905,6 +1934,7 @@ function New-GuiSync {
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
         Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{})
         UpdaterUpdate = $null; Discovered = [hashtable]::Synchronized(@{})
+        FreshOffer = $null; FreshRequest = $null
     })
 }
 function Set-CraftTitleBar($form) {
@@ -1987,7 +2017,8 @@ function Start-CraftWindow {
     Show-CraftSplash
     $sync = New-GuiSync
     $ui = @{ InfoIndex=0; WarnIndex=0; ErrIndex=0; ShownQuestion=''; PendingQuestion=$null
-             Busy=$false; Finished=$false; CloseWhenDone=$false; Items=@{}; Rank=@{}; Index=@{} }
+             Busy=$false; Finished=$false; CloseWhenDone=$false; Items=@{}; Rank=@{}; Index=@{}
+             FreshOffer=$null; ShownOffer='' }
     Write-Host ((L 'Craft Updater {0} laeuft im Fenster. Dieses Konsolenfenster bitte offen lassen - es zeigt die Einzelheiten.' 'Craft Updater {0} is running in its window. Please leave this console window open - it shows the details.') -f $UpdaterVersion) -ForegroundColor Cyan
 
     # --- Background run: the same file in the same process, linked to the window ---
@@ -2184,7 +2215,18 @@ function Start-CraftWindow {
     $btnClose.Anchor = 'Bottom,Right'
     $btnClose.Enabled = $false
 
-    $form.Controls.AddRange(@($list,$mark,$status,$progress,$btnReport,$btnNotes,$btnInstall,$btnClose,$footerLink,$updateLink,$header))
+    # New installation (after the run): same place as "Install", only visible while offered.
+    $btnFresh = New-Object System.Windows.Forms.Button
+    $btnFresh.Text = (L 'Neu installieren ...' 'Install new ...')
+    $btnFresh.Location = New-Object System.Drawing.Point(366,480)
+    $btnFresh.Size = New-Object System.Drawing.Size(124,32)
+    $btnFresh.Anchor = 'Bottom,Right'
+    $btnFresh.Visible = $false
+    $btnFresh.Enabled = $false
+    $freshTip = New-Object System.Windows.Forms.ToolTip
+    $freshTip.SetToolTip($btnFresh,(L 'Installiert die angehakten Programme - mit denselben Prüfungen wie Updates und erst nach deiner Rückfrage.' 'Installs the ticked programs - with the same checks as updates and only after you confirm.'))
+
+    $form.Controls.AddRange(@($list,$mark,$status,$progress,$btnReport,$btnNotes,$btnInstall,$btnFresh,$btnClose,$footerLink,$updateLink,$header))
     # The layout above has room for 14 programs. With more, the window grows by one row each
     # (at most 10) so that every program is visible without scrolling. Set AFTER adding the
     # controls: the anchors then move the lower controls and stretch the list.
@@ -2278,7 +2320,8 @@ function Start-CraftWindow {
                     $list.EndUpdate()
                 }
             }
-            if ($status.Text -ne [string]$sync.StatusText) { $status.Text = [string]$sync.StatusText }
+            # While new installations are offered, the hint text stays (no progress messages then).
+            if ($null -eq $ui.FreshOffer -and $status.Text -ne [string]$sync.StatusText) { $status.Text = [string]$sync.StatusText }
             if (-not $btnNotes.Visible -and $sync.Notes.Count -gt 0) { $btnNotes.Visible = $true }
             if (-not $updateLink.Visible -and $null -ne $sync.UpdaterUpdate) {
                 $updateLink.Text = (L 'Neue Craft-Updater-Version {0} verfügbar' 'New Craft Updater version {0} available') -f [string]$sync.UpdaterUpdate.Version
@@ -2290,7 +2333,7 @@ function Start-CraftWindow {
             $pval = [math]::Min($max,[math]::Max(0,[int]$sync.ProgressValue))
             if ($progress.Value -ne $pval) { $progress.Value = $pval }
             # Show the bar only while searching and installing, not while waiting for approval.
-            $wantBar = ($null -eq $ui.PendingQuestion) -and ([string]$sync.Phase -in @('Suche','Installieren'))
+            $wantBar = ($null -eq $ui.PendingQuestion) -and ([string]$sync.Phase -in @('Suche','Installieren','Neuinstallation'))
             if ($progress.Visible -ne $wantBar) { $progress.Visible = $wantBar }
 
             $question = $sync.Question
@@ -2313,6 +2356,24 @@ function Start-CraftWindow {
                     } finally { $timer.Start() }
                 }
             }
+            # After the run: offer programs that are not installed for a new installation.
+            $offer = $sync.FreshOffer
+            if ($null -ne $offer -and $ui.ShownOffer -ne [string]$offer.Id) {
+                $ui.ShownOffer = [string]$offer.Id
+                $ui.FreshOffer = $offer
+                $offerText = Get-SummaryText $sync.Summary ''
+                $status.Text = [string]$offerText[0] + ' ' + (L 'Nicht installierte Programme kannst du anhaken und neu installieren.' 'You can tick programs that are not installed and install them.')
+                $status.ForeColor = $offerText[1]
+                $progress.Visible = $false
+                $list.CheckBoxes = $true
+                foreach ($it in $list.Items) { $it.Checked = $false }
+                $btnInstall.Visible = $false
+                $btnFresh.Enabled = $false
+                $btnFresh.Visible = $true
+                $btnClose.Text = (L 'Schließen' 'Close')
+                $btnClose.Enabled = $true
+                if ($sync.ErrorReport) { $btnReport.Visible = $true }
+            }
             if ($async.IsCompleted) { & $finish }
         } finally { $ui.Busy = $false }
     })
@@ -2331,7 +2392,48 @@ function Start-CraftWindow {
         $btnClose.Enabled = $false
         $sync.Answer = $true
     })
+    # Ticks only for programs that are offered for a new installation (all others stay empty).
+    $list.Add_ItemCheck({
+        param($checkSender,$checkArgs)
+        $name = [string]$list.Items[$checkArgs.Index].Text
+        if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }
+    })
+    $list.Add_ItemChecked({ $btnFresh.Enabled = ($null -ne $ui.FreshOffer) -and ($list.CheckedItems.Count -gt 0) })
+    $endFreshOffer = {
+        param($request)
+        $ui.FreshOffer = $null
+        $btnFresh.Enabled = $false
+        $btnFresh.Visible = $false
+        $list.CheckBoxes = $false
+        $btnInstall.Visible = $true
+        $btnClose.Enabled = $false
+        $sync.FreshRequest = $request
+    }
+    $btnFresh.Add_Click({
+        $offer = $ui.FreshOffer
+        if ($null -eq $offer) { return }
+        $picked = @(foreach ($it in $list.CheckedItems) { $n = [string]$it.Text; if (@($offer.Choices) -contains $n) { $n } })
+        if ($picked.Count -eq 0) { return }
+        $lines = New-Object 'System.Collections.Generic.List[string]'
+        $lines.Add((L 'Folgende Programme neu installieren?' 'Install these programs?'))
+        foreach ($n in $picked) { $lines.Add('   ' + $n) }
+        $lines.Add('')
+        $lines.Add((L 'Sie werden von GitHub geladen und genauso geprüft wie Updates (Signatur, Herausgeber, Prüfsumme, Paketdaten). Installiert wird nur, wenn alle Prüfungen bestehen.' 'They are downloaded from GitHub and checked exactly like updates (signature, publisher, checksum, package data). They are only installed if every check passes.'))
+        $lines.Add((L 'Ein automatisches Zurücksetzen gibt es nicht.' 'There is no automatic rollback.'))
+        $answer = [System.Windows.Forms.MessageBox]::Show($form,($lines -join "`r`n"),(L 'Neu installieren' 'Install new programs'),
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Question,
+            [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes -or $null -eq $ui.FreshOffer) { return }
+        $status.ForeColor = [System.Drawing.SystemColors]::ControlText
+        & $endFreshOffer ([string[]]$picked)
+    })
     $btnClose.Add_Click({
+        if ($null -ne $ui.FreshOffer) {
+            # "Close" while new installations are offered = install nothing, then close.
+            $ui.CloseWhenDone = $true
+            & $endFreshOffer ([string[]]@())
+            return
+        }
         if ($null -ne $ui.PendingQuestion) {
             $ui.PendingQuestion = $null
             $btnInstall.Enabled = $false
@@ -2380,6 +2482,12 @@ function Start-CraftWindow {
         if ($ui.Finished) { return }
         if ($closeArgs.CloseReason -eq [System.Windows.Forms.CloseReason]::WindowsShutDown) { $sync.WindowClosed = $true; return }
         $closeArgs.Cancel = $true
+        if ($null -ne $ui.FreshOffer) {
+            # Closing while new installations are offered = install nothing.
+            $ui.CloseWhenDone = $true
+            & $endFreshOffer ([string[]]@())
+            return
+        }
         if ($null -ne $ui.PendingQuestion) {
             # Closing during the approval = do not install; the window closes afterwards.
             $ui.PendingQuestion = $null

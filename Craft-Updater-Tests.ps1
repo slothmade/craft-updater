@@ -905,6 +905,72 @@ try {
     }
     Set-Item -Path Function:\Get-VerifiedInstaller -Value $RealVerifiedInstaller
 
+    Write-Host "`n[20] New in 5.9: new installation offered in the window after the run"
+    $RealFreshInstall = ${function:Invoke-FreshInstall}
+    function Invoke-FreshInstall([string[]]$names,[switch]$Approved) { $script:FreshCalls += ,@{ Names=@($names); Approved=[bool]$Approved } }
+    # A helper runspace plays the window: waits for the offer, then answers (or closes).
+    function Invoke-WithFreshAnswer($request,[switch]$CloseWindow) {
+        $sync = New-GuiSync
+        $helper = [powershell]::Create()
+        [void]$helper.AddScript({
+            param($s,$r,$close)
+            $until = [datetime]::UtcNow.AddSeconds(5)
+            while ($null -eq $s.FreshOffer -and [datetime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 20 }
+            if ($null -ne $s.FreshOffer) { $s.SeenOffer = $s.FreshOffer }
+            if ($close -or $null -eq $s.FreshOffer) { $s.WindowClosed = $true } else { $s.FreshRequest = [string[]]$r }
+        }).AddArgument($sync).AddArgument($request).AddArgument([bool]$CloseWindow)
+        $handle = $helper.BeginInvoke()
+        try { $script:GuiSync = $sync; Invoke-FreshInstallOffer }
+        finally { $script:GuiSync = $null; [void]$helper.EndInvoke($handle); $helper.Dispose() }
+        return $sync
+    }
+    function Set-OfferRun {
+        Reset-State; $script:FreshCalls = @()
+        $script:Reports = Join-Path $TestDir ('Rep-' + [guid]::NewGuid().ToString('N')); [void](New-Item -ItemType Directory -Path $Reports -Force)
+        Add-Result 'WordCraft' '0.12.0' 'v0.12.0' 'Aktuell' 'x'
+        Add-Result 'FigCraft' '' '' 'Nicht installiert' 'x'
+    }
+    Test-Case 'Offer: nothing without the window, in check-only mode or without candidates' {
+        Set-OfferRun
+        Invoke-FreshInstallOffer
+        $sync = New-GuiSync; $script:GuiSync = $sync
+        try { $NurPruefen = $true; Invoke-FreshInstallOffer; $NurPruefen = $false
+              Reset-State; Add-Result 'WordCraft' '0.12.0' 'v0.12.0' 'Aktuell' 'x'; Invoke-FreshInstallOffer }
+        finally { $script:GuiSync = $null }
+        ($script:FreshCalls.Count -eq 0) -and ($null -eq $sync.FreshOffer)
+    }
+    Test-Case 'Offer: ticked and confirmed programs are installed with approval' {
+        Set-OfferRun
+        $sync = Invoke-WithFreshAnswer @('FigCraft')
+        ($script:FreshCalls.Count -eq 1) -and ($script:FreshCalls[0].Names -join ',') -eq 'FigCraft' -and $script:FreshCalls[0].Approved -and
+        (@($sync.SeenOffer.Choices) -join ',') -eq 'FigCraft' -and ($null -eq $sync.FreshOffer)
+    }
+    Test-Case 'Offer: "Close" (empty answer) or a closed window installs nothing' {
+        Set-OfferRun
+        $a = Invoke-WithFreshAnswer @()
+        $b = Invoke-WithFreshAnswer @('FigCraft') -CloseWindow
+        ($script:FreshCalls.Count -eq 0) -and ($null -ne $a.SeenOffer) -and ($null -eq $b.FreshOffer)
+    }
+    Test-Case 'Offer: nothing is offered after a security error' {
+        Set-OfferRun; Add-Result 'GridCraft' '0.1' 'v0.2' 'Sicherheitsfehler' 'x'
+        $sync = Invoke-WithFreshAnswer @('FigCraft')
+        ($script:FreshCalls.Count -eq 0) -and ($null -eq $sync.SeenOffer)
+    }
+    Set-Item -Path Function:\Invoke-FreshInstall -Value $RealFreshInstall
+    Test-Case 'Reports: the summary of the same run can be written twice without warnings' {
+        Set-OfferRun
+        $null = Write-RunSummary 6>$null 3>$null
+        $null = Write-RunSummary 6>$null 3>$null
+        $State.Warnings.Count -eq 0
+    }
+    Test-Case 'Window: ticks only for offered programs, own Yes/No (default No), Close installs nothing' {
+        ($UpdaterText -match [regex]::Escape('if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }')) -and
+        ($UpdaterText -match '(?s)\$btnFresh\.Add_Click\(\{.*?MessageBoxDefaultButton\]::Button2\).*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes') -and
+        ($UpdaterText -match [regex]::Escape("& `$endFreshOffer ([string[]]@())")) -and
+        ($UpdaterText -match [regex]::Escape('foreach ($it in $list.Items) { $it.Checked = $false }')) -and
+        ($UpdaterText -match '(?s)Invoke-Installation\s+\} finally \{.*?\}\s+Invoke-FreshInstallOffer\s+\}')
+    }
+
     Test-Case 'Window: skipping hides the notice for this window too' {
         ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
         ($UpdaterText -match [regex]::Escape("'skip'"))
