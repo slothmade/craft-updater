@@ -28,7 +28,7 @@ That's it. Nothing is installed on your PC except the Craft updates you approve.
 
 ## What it does
 
-- **Updates only what you already have.** Programs that are not installed are skipped.
+- **Updates only what you already have.** Programs that are not installed are left alone – unless you want them: after the run you can tick them and choose *Install new ...* (own Yes/No question, the same checks as updates).
 - **Finds new Craft apps by itself.** When the Craft team publishes a new app (a `storytold` repository ending in *craft* with a Windows installer), it shows up in the list as *newly found* – no Craft Updater update needed. It goes through exactly the same checks as all other apps.
 - **Checks every update before installing it:** SHA-256, Windows code signature, publisher, certificate profile, MSI contents and the upgrade relationship to your installed version. Details in [SECURITY.md](SECURITY.md).
 - **Fails closed.** If one installer fails a security check, nothing at all is installed in that run.
@@ -76,7 +76,7 @@ Craft Updater is meant as an **addition**, not a replacement. An honest comparis
 | Made by | a hobbyist (unofficial) | the ArtCraft team (official) |
 | Systems | Windows | Windows, macOS, Linux, FreeBSD |
 | Updates installed apps | yes | yes |
-| Installs new apps | not yet (planned) | yes |
+| Installs new apps | yes (tick, then confirm; window only) | yes |
 | Opens and uninstalls the apps | no | yes |
 | Go back to an older version | no | yes |
 | Shows what's new | yes | yes |

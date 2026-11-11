@@ -37,6 +37,12 @@ START (every time)
    -> "Do not install": nothing is changed.
 4. At the end the window tells you what happened. Then "Close".
 
+INSTALL NEW PROGRAMS (if you like)
+If a Craft program is missing, it shows up as "Not installed" at the end.
+Tick it and click "Install new ...". After its own question ("Yes") it is
+downloaded, checked exactly like an update and installed. Nothing ticked or
+"Close": nothing is installed. This works in the window only.
+
 The black window sits minimised in the taskbar - it belongs to the updater
 and closes by itself as soon as you close the Craft Updater window.
 

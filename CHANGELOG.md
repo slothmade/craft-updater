@@ -6,6 +6,7 @@
 - Window: after a successful update the column *Installed* shows the new version (before, it kept showing the old one until the next start). The window grows a little when there are more programs than fit into the list.
 - New: **Skip this version** for the notice about a new Craft Updater. A click on the notice now offers *Open download page*, *Skip this version* or *Later*. A skipped version stays quiet; the notice comes back for the next newer one. Only the version number is stored (`%LOCALAPPDATA%\CraftUpdater\SkippedUpdaterVersion.json`).
 - New: **new Craft apps are found automatically.** Public `storytold` repositories whose name ends in *craft* and whose latest stable release has a Windows installer for your PC appear in the list as *newly found* and go through exactly the same checks. The repository list is asked for at most every 12 hours; if anything goes wrong, the fixed list is used. Not included on purpose: ArtCraft, Craft Anything, the launcher and other tools.
+- New: **install Craft programs you do not have yet.** After the run, programs that are *not installed* can be ticked (nothing is ticked by default) and installed with *Install new ...* after their own Yes/No question (default No). They go through exactly the same checks as updates; in addition nothing of the same product family may be installed already. Window only.
 - Tidied up script comments that still mentioned a planned signed .exe.
 
 ## 5.8.1

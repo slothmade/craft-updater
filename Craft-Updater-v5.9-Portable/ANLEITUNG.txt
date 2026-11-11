@@ -36,6 +36,13 @@ STARTEN (jedes Mal)
    -> "Nicht installieren": nichts wird verändert.
 4. Am Ende steht unten, was passiert ist. Dann "Schließen".
 
+NEU INSTALLIEREN (wenn du möchtest)
+Fehlt dir ein Craft-Programm, steht es am Ende als "Nicht installiert" in
+der Liste. Du kannst es anhaken und auf "Neu installieren ..." klicken.
+Nach einer eigenen Rückfrage ("Ja") wird es geladen, genauso geprüft wie
+ein Update und installiert. Nichts angehakt oder "Schließen": es wird nichts
+installiert. Das geht nur im Fenster.
+
 Das schwarze Fenster liegt minimiert in der Taskleiste - es gehört dazu und
 schließt sich von selbst, sobald du das Craft-Updater-Fenster schließt.
 
