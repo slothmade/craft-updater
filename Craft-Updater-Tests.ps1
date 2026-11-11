@@ -971,6 +971,30 @@ try {
         ($UpdaterText -match '(?s)Invoke-Installation\s+\} finally \{.*?\}\s+Invoke-FreshInstallOffer\s+\}')
     }
 
+    Write-Host "`n[21] New in 5.9: check details per program"
+    $fakeCheck = [pscustomobject]@{ Hash=('AB'*32); Signer='Learning Machines Inc'; Issuer='CN=Microsoft ID Verified CS AOC CA 04, O=Microsoft Corporation'
+        Thumbprint=('12'*20); ProfileEkus=@($ExpectedProfileEku); MsiVersion='0.3.2'; Metadata=@{ ProductName='TextureCraft'; Manufacturer='Learning Machines LLC' } }
+    Test-Case 'Check details are kept per program (also for the window)' {
+        Reset-State; $State.Checks.Clear()
+        $sync = New-GuiSync; $script:GuiSync = $sync
+        try { Save-CheckDetails 'TextureCraft' 'v0.3.2' 'texturecraft-0.3.2-windows-x64.msi' $fakeCheck; Save-CheckDetails 'X' 'v1' 'x.msi' $null }
+        finally { $script:GuiSync = $null }
+        $d = $State.Checks['TextureCraft']
+        ($State.Checks.Count -eq 1) -and ($d.SHA256 -eq ('AB'*32)) -and ($d.Signer -eq 'Learning Machines Inc') -and ($d.ProfileEku -eq $ExpectedProfileEku) -and
+        ($d.Manufacturer -eq 'Learning Machines LLC') -and $sync.Checks.ContainsKey('TextureCraft')
+    }
+    Test-Case 'Check details text names checksum, signer, issuer, thumbprint, profile and MSI data' {
+        $text = Format-CheckDetails 'TextureCraft' $State.Checks['TextureCraft']
+        ($text -match 'TextureCraft v0\.3\.2') -and ($text -match ('AB'*32)) -and ($text -match 'Learning Machines Inc') -and ($text -match 'Microsoft Corporation') -and
+        ($text -match ('12'*20)) -and ($text -match [regex]::Escape($ExpectedProfileEku)) -and ($text -match 'Learning Machines LLC') -and ($text -match 'noch einmal')
+    }
+    Test-Case 'Check details are recorded after both successful checks and shown by right-click' {
+        ([regex]::Matches($UpdaterText,[regex]::Escape('Save-CheckDetails $program.Name $remoteText $name $check'))).Count -eq 2 -and
+        ($UpdaterText -match [regex]::Escape('Issuer=$issuer;')) -and
+        ($UpdaterText -match [regex]::Escape('$list.ContextMenuStrip = $listMenu')) -and
+        ($UpdaterText -match [regex]::Escape("[void]`$listMenu.Items.Add((L 'Prüfdetails' 'Check details'),`$null,{ & `$showChecks })"))
+    }
+
     Test-Case 'Window: skipping hides the notice for this window too' {
         ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
         ($UpdaterText -match [regex]::Escape("'skip'"))

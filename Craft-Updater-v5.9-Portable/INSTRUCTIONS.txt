@@ -33,6 +33,9 @@ START (every time)
       double-click the program). If nothing is selected, the first
       program with an update is shown; other updates are listed below
       the text. Programs without an update have nothing new.
+   -> Right-click a program -> "Check details": shows what was checked
+      for the downloaded installer (checksum, signature, publisher,
+      certificate, MSI data).
    -> Click "Install" and confirm with "Yes".
    -> "Do not install": nothing is changed.
 4. At the end the window tells you what happened. Then "Close".

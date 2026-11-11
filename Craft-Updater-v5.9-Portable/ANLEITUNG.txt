@@ -32,6 +32,9 @@ STARTEN (jedes Mal)
       (oder einfach doppelt auf das Programm klicken). Ist nichts
       angeklickt, kommt das erste Programm mit Update; weitere Updates
       stehen unten im Text. Programme ohne Update haben nichts Neues.
+   -> Rechtsklick auf ein Programm -> "Prüfdetails": zeigt, was beim
+      geladenen Installer geprüft wurde (Prüfsumme, Signatur,
+      Herausgeber, Zertifikat, MSI-Angaben).
    -> "Installieren" klicken und die Rückfrage mit "Ja" bestätigen.
    -> "Nicht installieren": nichts wird verändert.
 4. Am Ende steht unten, was passiert ist. Dann "Schließen".

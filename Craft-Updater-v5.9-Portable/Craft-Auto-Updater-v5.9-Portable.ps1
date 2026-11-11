@@ -197,6 +197,7 @@ $State = @{
     Pending            = New-Object 'System.Collections.Generic.List[object]'  # verified downloads
     Eligible           = New-Object 'System.Collections.Generic.List[object]'  # ready to install
     Notes              = @{}                                                    # "what's new" per program (release notes)
+    Checks             = @{}                                                    # check details per program (window: right-click)
     RateLimited        = $false
     RateLimitUntil     = [datetimeoffset]::MinValue
     SecurityBlocked    = $false
@@ -838,7 +839,7 @@ function Assert-TrustedMsi([string]$path,[string]$expectedHash,$program,$registr
             $guidOut = [guid]::Empty
             if (-not [guid]::TryParse([string]$metadata[$code],[ref]$guidOut)) { throw ((L 'Ungueltiger MSI-Code: ' 'Invalid MSI code: ') + $code) }
         }
-        return [pscustomobject]@{ Hash=$actual; Signer=$org; Thumbprint=$actualPin; ProfileEkus=$profileEkus; MsiVersion=$metadata['ProductVersion']; Metadata=$metadata; Package=$package }
+        return [pscustomobject]@{ Hash=$actual; Signer=$org; Issuer=$issuer; Thumbprint=$actualPin; ProfileEkus=$profileEkus; MsiVersion=$metadata['ProductVersion']; Metadata=$metadata; Package=$package }
     } catch {
         throw (Get-SecurityMessage $_)
     }
@@ -1025,6 +1026,36 @@ function Test-InstalledProductIdentity([string]$productCode,[version]$expectedVe
 # 7. RUN PHASES
 # ============================================================================
 # (Removed: the copy to Program Files and the start-folder cleanup. The package files simply stay.)
+function Save-CheckDetails([string]$programName,[string]$version,[string]$fileName,$check) {
+    # Remembers what was verified for this installer (window: right-click -> "Check details").
+    if ($null -eq $check) { return }
+    $md = $check.Metadata
+    $details = [pscustomobject]@{
+        Version=$version; File=$fileName; SHA256=[string]$check.Hash; Signer=[string]$check.Signer
+        Issuer=[string]$check.Issuer; Thumbprint=[string]$check.Thumbprint; ProfileEku=(@($check.ProfileEkus) -join ', ')
+        ProductName=$(if ($null -ne $md) { [string]$md['ProductName'] } else { '' })
+        Manufacturer=$(if ($null -ne $md) { [string]$md['Manufacturer'] } else { '' })
+        MsiVersion=[string]$check.MsiVersion; Time=(Get-Date).ToString('HH:mm:ss')
+    }
+    $State.Checks[$programName] = $details
+    if ($null -ne $GuiSync) { $GuiSync.Checks[$programName] = $details }
+}
+function Format-CheckDetails([string]$programName,$details) {
+    # Plain text for the "Check details" window.
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $lines.Add(((L 'Geprüfter Installer für {0} {1}:' 'Verified installer for {0} {1}:') -f $programName,(Format-VersionText ([string]$details.Version))))
+    $lines.Add('')
+    $lines.Add(((L 'Datei: {0}' 'File: {0}') -f $details.File))
+    $lines.Add(((L 'SHA-256 (gleich wie bei GitHub): {0}' 'SHA-256 (same as on GitHub): {0}') -f $details.SHA256))
+    $lines.Add(((L 'Signatur gültig, signiert von: {0}' 'Valid signature, signed by: {0}') -f $details.Signer))
+    $lines.Add(((L 'Zertifikat ausgestellt von: {0}' 'Certificate issued by: {0}') -f $details.Issuer))
+    $lines.Add(((L 'Fingerabdruck: {0}' 'Thumbprint: {0}') -f $details.Thumbprint))
+    $lines.Add(((L 'Zertifikatsprofil (EKU): {0}' 'Certificate profile (EKU): {0}') -f $details.ProfileEku))
+    $lines.Add(((L 'MSI: {0} {1}, Hersteller {2}' 'MSI: {0} {1}, manufacturer {2}') -f $details.ProductName,$details.MsiVersion,$details.Manufacturer))
+    $lines.Add('')
+    $lines.Add(((L 'Geprüft um {0}. Vor der Installation wird alles noch einmal geprüft.' 'Checked at {0}. Everything is checked again right before installing.') -f $details.Time))
+    return ($lines -join "`r`n")
+}
 function New-PendingItem($program,$app,[string]$localText,[string]$remoteText,[version]$remote,[string]$file,[string]$expectedHash,$check,[bool]$fresh=$false) {
     # Fresh = new installation of a program that is not installed yet (no upgrade).
     return [pscustomobject]@{Program=$program; RegistryApp=$app; Local=$localText; Latest=$remoteText; Version=$remote; File=$file; ExpectedHash=$expectedHash; Check=$check; Fresh=$fresh}
@@ -1060,6 +1091,7 @@ function Get-VerifiedInstaller($program,$release,$app,[string]$localText,[string
                 $check=Assert-TrustedMsi $destination $expectedHash $program $app $remote -FreshInstall:$FreshInstall
                 Write-Host ((L '{0}: MSI bereits vorhanden, erneut vollstaendig geprueft (kein Download)' '{0}: MSI already present, fully checked again (no download)') -f $program.Name) -ForegroundColor DarkGray
                 Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'Vorhandene Datei: Hash, Signatur, Profil-EKU und MSI erneut geprueft' 'Existing file: hash, signature, profile EKU and MSI checked again') $destination $check.Hash $check.Signer
+                Save-CheckDetails $program.Name $remoteText $name $check
                 return (New-PendingItem $program $app $localText $remoteText $remote $destination $expectedHash $check $FreshInstall)
             } catch {
                 # Never install it - discard and download fresh. The new file is fully checked.
@@ -1083,6 +1115,7 @@ function Get-VerifiedInstaller($program,$release,$app,[string]$localText,[string
         # The hash is checked again before installation in Test-InstallationCandidate.
         Move-Item -LiteralPath $tempFile -Destination $destination -ErrorAction Stop
         Add-Result $program.Name $localText $remoteText 'Verifiziert' (L 'SHA256, Authenticode, Herausgeber, Profil-EKU und MSI-Metadaten OK; Profilpruefung bestanden' 'SHA256, Authenticode, publisher, profile EKU and MSI metadata OK; profile check passed') $destination $check.Hash $check.Signer
+        Save-CheckDetails $program.Name $remoteText $name $check
         return (New-PendingItem $program $app $localText $remoteText $remote $destination $expectedHash $check $FreshInstall)
     } finally {
         if ($tempDir -and (Test-Path -LiteralPath $tempDir)) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
@@ -1932,7 +1965,7 @@ function New-GuiSync {
         Rows = [hashtable]::Synchronized(@{}); StatusText = (L 'Craft Updater startet ...' 'Craft Updater is starting ...')
         ProgressValue = 0; ProgressMax = $Programs.Count
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
-        Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{})
+        Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{}); Checks = [hashtable]::Synchronized(@{})
         UpdaterUpdate = $null; Discovered = [hashtable]::Synchronized(@{})
         FreshOffer = $null; FreshRequest = $null
     })
@@ -2199,7 +2232,7 @@ function Start-CraftWindow {
     $btnNotes.Anchor = 'Bottom,Left'
     $btnNotes.Visible = $false
     $notesTip = New-Object System.Windows.Forms.ToolTip
-    $notesTip.SetToolTip($btnNotes,(L 'Zeigt die Neuerungen des angeklickten Programms (oder Doppelklick auf ein Programm).' 'Shows what is new in the selected program (or double-click a program).'))
+    $notesTip.SetToolTip($btnNotes,(L 'Zeigt die Neuerungen des angeklickten Programms (oder Doppelklick auf ein Programm). Rechtsklick auf ein Programm: auch Prüfdetails.' 'Shows what is new in the selected program (or double-click a program). Right-click a program: check details too.'))
 
     $btnInstall = New-Object System.Windows.Forms.Button
     $btnInstall.Text = (L 'Installieren' 'Install')
@@ -2472,6 +2505,21 @@ function Start-CraftWindow {
         Show-ReleaseNotesDialog $form ((L 'Was ist neu in {0} {1}?' "What's new in {0} {1}?") -f $name,(Format-VersionText ([string]$note.Version))) $body ([string]$note.Url) $footer
     }
     $btnNotes.Add_Click({ & $showNotes })
+    # Right-click on a program: "What's new?" and "Check details" (no room for another button).
+    $showChecks = {
+        if ($list.SelectedItems.Count -eq 0) { return }
+        $picked = [string]$list.SelectedItems[0].Text
+        if (-not $sync.Checks.ContainsKey($picked)) {
+            $msg = (L 'Für {0} wurde in diesem Lauf kein Installer geladen und geprüft (kein Update und keine Neuinstallation). Prüfdetails gibt es nur für geladene Installer.' 'No installer for {0} was downloaded and checked in this run (no update and no new installation). Check details exist only for downloaded installers.') -f $picked
+            [void][System.Windows.Forms.MessageBox]::Show($form,$msg,(L 'Prüfdetails' 'Check details'),[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)
+            return
+        }
+        [void][System.Windows.Forms.MessageBox]::Show($form,(Format-CheckDetails $picked $sync.Checks[$picked]),((L 'Prüfdetails: {0}' 'Check details: {0}') -f $picked),[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information)
+    }
+    $listMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    [void]$listMenu.Items.Add((L 'Was ist neu?' "What's new?"),$null,{ & $showNotes })
+    [void]$listMenu.Items.Add((L 'Prüfdetails' 'Check details'),$null,{ & $showChecks })
+    $list.ContextMenuStrip = $listMenu
     $list.Add_DoubleClick({ & $showNotes })
     $btnReport.Add_Click({
         try { Start-Process -FilePath (Join-Path $env:SystemRoot 'notepad.exe') -ArgumentList ('"' + [string]$sync.ErrorReport + '"') }

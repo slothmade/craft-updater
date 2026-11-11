@@ -34,6 +34,7 @@ That's it. Nothing is installed on your PC except the Craft updates you approve.
 - **Fails closed.** If one installer fails a security check, nothing at all is installed in that run.
 - **Locks the checked file** until Windows Installer has finished, so it cannot be swapped in between.
 - **Shows what's new** in each update before you decide: click a program in the list and then *What's new?*, or double-click the program.
+- **Shows what was checked.** Right-click a program → *Check details*: checksum, signer, certificate issuer and thumbprint, certificate profile and MSI data of the downloaded installer.
 - **Asks once, clearly.** *Install* button plus *Yes*, or `YES` (German: `JA`) in console mode.
 - **Verifies afterwards** that the new version is really installed.
 - **Tells you about a new Craft Updater version** with a small link at the bottom right of the window. A click lets you open the release page, skip this version (the notice comes back only for an even newer one) or decide later; nothing is downloaded or installed automatically.
