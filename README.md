@@ -14,7 +14,7 @@ It checks the official GitHub releases, downloads only properly signed installer
 *Deutsch: Das Programm spricht auf einem deutschen Windows automatisch Deutsch. Eine deutsche Anleitung liegt im Paket unter [`ANLEITUNG.txt`](Craft-Updater-v5.9-Portable/ANLEITUNG.txt).*
 
 <p align="center">
-  <img src="docs/screenshot-en.png" width="420" alt="Craft Updater window in English: one update ready to install, all other Craft programs up to date">
+  <img src="docs/screenshot-en.png" width="420" alt="Craft Updater window in English: all Craft programs up to date, a program that is not installed is ticked for a new installation">
   <img src="docs/screenshot-de.png" width="420" alt="Craft Updater window in German">
 </p>
 
