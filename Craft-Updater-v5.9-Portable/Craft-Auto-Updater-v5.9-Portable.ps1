@@ -102,7 +102,7 @@ $Programs = @(
 # "newly found" and go through EXACTLY the same checks as the apps above (signature, publisher,
 # certificate profile, MSI contents). The fixed list stays as the fallback (offline, rate limit).
 # Not Craft apps in this sense, or deliberately left out:
-$DiscoveryExcludedRepos = @('artcraft','artcraft-services','craft-launcher','craft-anything','solidcraft')
+$DiscoveryExcludedRepos = @('artcraft','artcraft-services','craft-launcher','craft-anything','solidcraft','anicraft')
 # At most this many unknown repositories are looked at per run (one request each).
 $DiscoveryMaxChecks = 5
 # The repository list changes rarely: asked for at most once every 12 hours.

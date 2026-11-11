@@ -761,6 +761,7 @@ try {
     Test-Case 'Discovery: excluded, known and non-Craft repositories are ignored' {
         ($null -eq (ConvertTo-DiscoveredProgram 'artcraft' (New-DiscoveryRelease 'artcraft'))) -and
         ($null -eq (ConvertTo-DiscoveredProgram 'craft-anything' (New-DiscoveryRelease 'craft-anything'))) -and
+        ($null -eq (ConvertTo-DiscoveredProgram 'anicraft' (New-DiscoveryRelease 'anicraft'))) -and
         ($null -eq (ConvertTo-DiscoveredProgram 'wordcraft' (New-DiscoveryRelease 'wordcraft'))) -and
         ($null -eq (ConvertTo-DiscoveredProgram 'word-craft' (New-DiscoveryRelease 'word-craft'))) -and
         ($null -eq (ConvertTo-DiscoveredProgram 'craft' (New-DiscoveryRelease 'craft'))) -and
