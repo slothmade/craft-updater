@@ -339,7 +339,7 @@ try {
         # 5.10: shortcuts exist ONLY for freshly installed Craft programs, in exactly two helpers.
         $outside = [regex]::Replace($UpdaterText,'(?ms)^function (Get-ShortcutTarget|New-CraftShortcut)\(.*?^\}','')
         $parts = @(($UpdaterText -notmatch 'Invoke-ProtectedInstall'), ($outside -notmatch 'WScript\.Shell'),
-        ($outside -notmatch 'CreateShortcut'), ($UpdaterText -notmatch 'Startordner\.txt'),
+        ($outside -notmatch '\.CreateShortcut\('), ($UpdaterText -notmatch 'Startordner\.txt'),
         ($UpdaterText -notmatch 'WriteAllBytes'),
         (([regex]::Matches($UpdaterText,'New-CraftShortcut \$place\.Folder')).Count -eq 1),
         ($UpdaterText -match [regex]::Escape("if (`$exe.StartsWith((`$ScriptDirectory.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)) { throw")))
@@ -1090,10 +1090,10 @@ try {
         try {
             Invoke-FreshInstall @('FigCraft') -Approved
             $without = $script:LinkCalls.Count
-            Set-FreshRun
+            Set-FreshRun; $Fake.Release = New-FakeRelease 'v0.14.0' @()
             Invoke-FreshInstall @('FigCraft') -Approved -CreateShortcuts
             $last = Get-LastResult
-            Set-FreshRun
+            Set-FreshRun; $Fake.Release = New-FakeRelease 'v0.14.0' @()
             Set-Item -Path Function:\Install-EligibleUpdate -Value { param($e) Add-Result $e.Item.Program.Name '' $e.Item.Latest 'Installationsfehler' 'ExitCode 1603' }
             Invoke-FreshInstall @('FigCraft') -Approved -CreateShortcuts
         } finally {
