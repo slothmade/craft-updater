@@ -1149,6 +1149,12 @@ try {
         ($UpdaterText -match [regex]::Escape("if (`$null -ne `$GuiSync) { `$GuiSync.UpdateShortcuts = `$false }")) -and
         ($UpdaterText -match [regex]::Escape("if (`$updateShortcuts) { Add-ShortcutsAfterInstall `$firstResult '^Installiert - ' }"))
     }
+    Test-Case 'Window: double-click never ticks a row, a tick on a program that is not offered is removed (5.10)' {
+        ($UpdaterText -match [regex]::Escape('if ($mouseArgs.Clicks -ge 2) { $ui.BlockCheckUntil = [datetime]::UtcNow.AddMilliseconds(600) }')) -and
+        ($UpdaterText -match [regex]::Escape('if ([datetime]::UtcNow -lt $ui.BlockCheckUntil) { $checkArgs.NewValue = $checkArgs.CurrentValue }')) -and
+        ($UpdaterText -match '(?s)\$list\.Add_ItemChecked\(\{.*?-notcontains \[string\]\$item\.Text\)\) \{\s+\$ui\.FixingCheck = \$true\s+try \{ \$item\.Checked = \$false \} finally \{ \$ui\.FixingCheck = \$false \}') -and
+        ($UpdaterText -match [regex]::Escape('FixingCheck=$false; BlockCheckUntil=[datetime]::MinValue'))
+    }
     Test-Case 'Shortcut: the window asks with a tick that is on by default and hands it over' {
         ($UpdaterText -match '(?s)function Show-ShortcutQuestionDialog.*?\$chkShortcuts\.Checked = \$true') -and
         ($UpdaterText -match [regex]::Escape("return (Show-ShortcutQuestionDialog `$owner (L 'Neu installieren'")) -and

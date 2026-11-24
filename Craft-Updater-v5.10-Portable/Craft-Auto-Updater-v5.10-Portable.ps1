@@ -2231,7 +2231,7 @@ function Start-CraftWindow {
     [System.Windows.Forms.Application]::EnableVisualStyles()
     Show-CraftSplash
     $sync = New-GuiSync
-    $ui = @{ InfoIndex=0; WarnIndex=0; ErrIndex=0; ShownQuestion=''; PendingQuestion=$null
+    $ui = @{ InfoIndex=0; WarnIndex=0; ErrIndex=0; ShownQuestion=''; PendingQuestion=$null; FixingCheck=$false; BlockCheckUntil=[datetime]::MinValue
              Busy=$false; Finished=$false; CloseWhenDone=$false; Items=@{}; Rank=@{}; Index=@{}
              FreshOffer=$null; ShownOffer='' }
     Write-Host ((L 'Craft Updater {0} laeuft im Fenster. Dieses Konsolenfenster bitte offen lassen - es zeigt die Einzelheiten.' 'Craft Updater {0} is running in its window. Please leave this console window open - it shows the details.') -f $UpdaterVersion) -ForegroundColor Cyan
@@ -2610,10 +2610,26 @@ function Start-CraftWindow {
     # Ticks only for programs that are offered for a new installation (all others stay empty).
     $list.Add_ItemCheck({
         param($checkSender,$checkArgs)
+        if ($ui.FixingCheck) { return }
         $name = [string]$list.Items[$checkArgs.Index].Text
-        if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }
+        if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue; return }
+        # A double-click opens "What's new?" and must not toggle the tick (Windows does that by itself).
+        if ([datetime]::UtcNow -lt $ui.BlockCheckUntil) { $checkArgs.NewValue = $checkArgs.CurrentValue }
     })
-    $list.Add_ItemChecked({ $btnFresh.Enabled = ($null -ne $ui.FreshOffer) -and ($list.CheckedItems.Count -gt 0) })
+    $list.Add_MouseDown({
+        param($mouseSender,$mouseArgs)
+        if ($mouseArgs.Clicks -ge 2) { $ui.BlockCheckUntil = [datetime]::UtcNow.AddMilliseconds(600) }
+    })
+    $list.Add_ItemChecked({
+        param($checkedSender,$checkedArgs)
+        # Safety net: a program that is not offered can never stay ticked, however the tick got there.
+        $item = $checkedArgs.Item
+        if (-not $ui.FixingCheck -and $item.Checked -and ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains [string]$item.Text)) {
+            $ui.FixingCheck = $true
+            try { $item.Checked = $false } finally { $ui.FixingCheck = $false }
+        }
+        $btnFresh.Enabled = ($null -ne $ui.FreshOffer) -and ($list.CheckedItems.Count -gt 0)
+    })
     $endFreshOffer = {
         param($request,$shortcuts)
         $ui.FreshOffer = $null
