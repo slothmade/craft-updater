@@ -977,7 +977,7 @@ try {
     Test-Case 'Window: ticks only for offered programs, own Yes/No (default No), Close installs nothing' {
         ($UpdaterText -match [regex]::Escape('if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }')) -and
         ($UpdaterText -match '(?s)\$btnFresh\.Add_Click\(\{.*?\$choice = Show-FreshInstallDialog \$form.*?if \(\$null -eq \$choice -or \$null -eq \$ui\.FreshOffer\) \{ return \}') -and
-        ($UpdaterText -match '(?s)function Show-FreshInstallDialog.*?\$dlg\.AcceptButton = \$btnNo\s+\$dlg\.CancelButton = \$btnNo.*?\$dlg\.ActiveControl = \$btnNo.*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \$null \}') -and
+        ($UpdaterText -match '(?s)function Show-ShortcutQuestionDialog.*?\$dlg\.AcceptButton = \$btnNo\s+\$dlg\.CancelButton = \$btnNo.*?\$dlg\.ActiveControl = \$btnNo.*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \$null \}') -and
         ($UpdaterText -match [regex]::Escape("& `$endFreshOffer ([string[]]@())")) -and
         ($UpdaterText -match [regex]::Escape('foreach ($it in $list.Items) { $it.Checked = $false }')) -and
         ($UpdaterText -match '(?s)Invoke-Installation\s+\} finally \{.*?\}\s+Invoke-FreshInstallOffer\s+\}')
@@ -1111,8 +1111,47 @@ try {
         ((Get-ThrowMessage { New-CraftShortcut $p.Desktop 'X' $selfExe }) -like '*Updater selbst*') -and
         -not (Test-Path -LiteralPath (Join-Path $p.Desktop 'X.lnk'))
     }
+    Test-Case 'Shortcut on update: only with the tick and only for confirmed updates' {
+        function Invoke-UpdateWithTick([bool]$tick) {
+            Reset-State; $script:LinkCalls = @()
+            $State.Eligible.Add([pscustomobject]@{ Item=(New-FakeItem 'WordCraft'); Check=[pscustomobject]@{Signer='Learning Machines Inc'} })
+            $State.Eligible.Add([pscustomobject]@{ Item=(New-FakeItem 'GridCraft'); Check=[pscustomobject]@{Signer='Learning Machines Inc'} })
+            $sync = New-GuiSync
+            $helper = [powershell]::Create()
+            [void]$helper.AddScript({
+                param($s,$t)
+                $until = [datetime]::UtcNow.AddSeconds(5)
+                while ($null -eq $s.Question -and [datetime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 20 }
+                if ($null -ne $s.Question) { $s.UpdateShortcuts = $t; $s.Answer = $true } else { $s.WindowClosed = $true }
+            }).AddArgument($sync).AddArgument($tick)
+            $handle = $helper.BeginInvoke()
+            try { $script:GuiSync = $sync; Invoke-Installation }
+            finally { $script:GuiSync = $null; [void]$helper.EndInvoke($handle); $helper.Dispose() }
+            return @($script:LinkCalls)
+        }
+        $savedInstall = ${function:Install-EligibleUpdate}
+        $savedLinks = ${function:Add-CraftShortcutsForProgram}
+        Set-Item -Path Function:\Install-EligibleUpdate -Value { param($e)
+            $st = if ($e.Item.Program.Name -eq 'GridCraft') { 'Installationsfehler' } else { 'Installiert - nachgeprueft' }
+            Add-Result $e.Item.Program.Name $e.Item.Local $e.Item.Latest $st 'ExitCode' }
+        Set-Item -Path Function:\Add-CraftShortcutsForProgram -Value { param($program) $script:LinkCalls += [string]$program.Name; return 'Verknüpfung - test' }
+        try { $with = Invoke-UpdateWithTick $true; $wordDetail = [string](@($State.Results | Where-Object { $_.Program -eq 'WordCraft' })[-1].Detail); $without = Invoke-UpdateWithTick $false }
+        finally {
+            Set-Item -Path Function:\Install-EligibleUpdate -Value $savedInstall
+            Set-Item -Path Function:\Add-CraftShortcutsForProgram -Value $savedLinks
+        }
+        $ok = (($with -join ',') -eq 'WordCraft') -and ($without.Count -eq 0) -and ($wordDetail -like 'ExitCode; Verknüpfung - test')
+        if ($ok) { $true } else { 'with=' + ($with -join ',') + ' without=' + ($without -join ',') + ' detail=' + $wordDetail }
+    }
+    Test-Case 'Shortcut on update: the install button asks with the tick and hands it over first' {
+        ($UpdaterText -match '(?s)\$btnInstall\.Add_Click\(\{.*?\$choice = Show-ShortcutQuestionDialog \$form.*?if \(\$null -eq \$choice\) \{ return \}') -and
+        ($UpdaterText -match '(?s)\$sync\.UpdateShortcuts = \[bool\]\$choice\.Shortcuts\s+\$sync\.Answer = \$true') -and
+        ($UpdaterText -match [regex]::Escape("if (`$null -ne `$GuiSync) { `$GuiSync.UpdateShortcuts = `$false }")) -and
+        ($UpdaterText -match [regex]::Escape("if (`$updateShortcuts) { Add-ShortcutsAfterInstall `$firstResult '^Installiert - ' }"))
+    }
     Test-Case 'Shortcut: the window asks with a tick that is on by default and hands it over' {
-        ($UpdaterText -match '(?s)function Show-FreshInstallDialog.*?\$chkShortcuts\.Checked = \$true') -and
+        ($UpdaterText -match '(?s)function Show-ShortcutQuestionDialog.*?\$chkShortcuts\.Checked = \$true') -and
+        ($UpdaterText -match [regex]::Escape("return (Show-ShortcutQuestionDialog `$owner (L 'Neu installieren'")) -and
         ($UpdaterText -match [regex]::Escape('& $endFreshOffer ([string[]]$picked) ([bool]$choice.Shortcuts)')) -and
         ($UpdaterText -match '(?s)\$sync\.FreshShortcuts = \[bool\]\$shortcuts\s+\$sync\.FreshRequest = \$request') -and
         ($UpdaterText -match [regex]::Escape('Invoke-FreshInstall $names -Approved -CreateShortcuts:$shortcuts'))

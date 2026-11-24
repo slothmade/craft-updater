@@ -48,6 +48,10 @@ downloaded, checked exactly like an update and installed. Nothing ticked or
 In that question "Create a shortcut on the desktop and in the Start menu" is
 ticked already. If there already is a shortcut, no second one is created. If
 you uninstall the program later, delete the desktop shortcut yourself.
+The update question has the same tick ("Create missing shortcuts ..."):
+after the update, programs without a shortcut get one. If you do not want
+that, untick it first - otherwise a deleted shortcut comes back with the
+next update.
 
 The black window sits minimised in the taskbar - it belongs to the updater
 and closes by itself as soon as you close the Craft Updater window.

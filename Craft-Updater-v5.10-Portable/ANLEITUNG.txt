@@ -49,6 +49,10 @@ In der Rückfrage ist "Verknüpfung auf dem Desktop und im Startmenü anlegen"
 schon angehakt. Gibt es dort schon eine Verknüpfung, wird keine zweite
 angelegt. Wenn du das Programm später deinstallierst, lösch die Verknüpfung
 auf dem Desktop selbst.
+Auch die Rückfrage bei Updates hat dieses Häkchen ("Fehlende Verknüpfungen
+..."): Nach dem Update bekommen Programme ohne Verknüpfung eine. Willst du
+keine, nimm das Häkchen vorher raus - sonst kommt eine gelöschte
+Verknüpfung beim nächsten Update wieder.
 
 Das schwarze Fenster liegt minimiert in der Taskleiste - es gehört dazu und
 schließt sich von selbst, sobald du das Craft-Updater-Fenster schließt.

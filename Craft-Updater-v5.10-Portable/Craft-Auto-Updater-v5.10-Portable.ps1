@@ -1325,6 +1325,7 @@ function Invoke-Installation {
         $lines.Add(((L 'Jetzt {0} Update(s) installieren?' 'Install {0} update(s) now?') -f $State.Eligible.Count))
         Set-GuiStatus ((L '{0} Update(s) bereit. Zum Installieren auf "Installieren" klicken.' '{0} update(s) ready. Click "Install" to install.') -f $State.Eligible.Count)
         Set-GuiPhase 'Warten'
+        if ($null -ne $GuiSync) { $GuiSync.UpdateShortcuts = $false }
         $approved = Request-Confirmation 'Updates' (L 'Updates installieren' 'Install updates') ($lines -join "`r`n") (L 'Alle gelisteten Updates installieren? Bitte JA eingeben (sonst Abbruch)' 'Install all listed updates? Type YES (anything else cancels)')
     }
     if (-not $approved) {
@@ -1339,14 +1340,18 @@ function Invoke-Installation {
         foreach ($e in $State.Eligible) { Add-Result $e.Item.Program.Name $e.Item.Local $e.Item.Latest 'Gesperrt' (L 'Administratorrechte fehlen' 'Administrator rights missing') $e.Item.File }
         return
     }
+    # Window only: the tick "Create missing shortcuts" in the update question (on by default).
+    $updateShortcuts = ($null -ne $GuiSync) -and [bool]$GuiSync.UpdateShortcuts
     Set-GuiPhase 'Installieren'
     $installIndex = 0
+    $firstResult = $State.Results.Count
     foreach ($e in $State.Eligible) {
         $installIndex++
         if ($State.StopInstallBatch) { Add-Result $e.Item.Program.Name $e.Item.Local $e.Item.Latest 'Gesperrt' (L 'Vorheriger MSI-Fehler; weitere Installationen ausgesetzt' 'Previous MSI error; further installations suspended') $e.Item.File; continue }
         Set-GuiStatus ((L 'Installiere {0} ({1} von {2}) - bitte warten ...' 'Installing {0} ({1} of {2}) - please wait ...') -f $e.Item.Program.Name,$installIndex,$State.Eligible.Count) ($installIndex - 1) $State.Eligible.Count
         Install-EligibleUpdate $e
     }
+    if ($updateShortcuts) { Add-ShortcutsAfterInstall $firstResult '^Installiert - ' }
     Set-GuiStatus (L 'Installation abgeschlossen.' 'Installation finished.') $State.Eligible.Count $State.Eligible.Count
     Set-GuiPhase 'Fertig'
 }
@@ -1411,21 +1416,25 @@ function Invoke-FreshInstall([string[]]$names,[switch]$Approved,[switch]$CreateS
         Install-EligibleUpdate $e
     }
     # Shortcuts only if the user kept the tick, and only for programs whose new installation
-    # was confirmed above. A problem here never turns a good installation into an error.
-    if ($CreateShortcuts) {
-        for ($i=$firstResult; $i -lt $State.Results.Count; $i++) {
-            $result=$State.Results[$i]
-            if ([string]$result.Status -notmatch '^Installiert \(neu\)') { continue }
-            $program=@($Programs | Where-Object { [string]$_.Name -eq [string]$result.Program })[0]
-            if ($null -eq $program) { continue }
-            $note=Add-CraftShortcutsForProgram $program
-            $result.Detail=[string]$result.Detail+'; '+$note
-            if ($null -ne $GuiSync -and $GuiSync.Rows.ContainsKey([string]$result.Program)) { $GuiSync.Rows[[string]$result.Program].Detail=$result.Detail }
-            Write-Host ([string]$result.Program+': '+$note) -ForegroundColor Cyan
-        }
-    }
+    # was confirmed above.
+    if ($CreateShortcuts) { Add-ShortcutsAfterInstall $firstResult '^Installiert \(neu\)' }
     Set-GuiStatus (L 'Neuinstallation abgeschlossen.' 'New installation finished.') $State.Eligible.Count $State.Eligible.Count
     Set-GuiPhase 'Fertig'
+}
+function Add-ShortcutsAfterInstall([int]$firstResult,[string]$statusPattern) {
+    # After installs: shortcuts for every program whose result since $firstResult is a
+    # confirmed installation (status matches $statusPattern). A problem here never turns a
+    # good installation into an error; it is only noted in the result.
+    for ($i=$firstResult; $i -lt $State.Results.Count; $i++) {
+        $result=$State.Results[$i]
+        if ([string]$result.Status -notmatch $statusPattern) { continue }
+        $program=@($Programs | Where-Object { [string]$_.Name -eq [string]$result.Program })[0]
+        if ($null -eq $program) { continue }
+        $note=Add-CraftShortcutsForProgram $program
+        $result.Detail=[string]$result.Detail+'; '+$note
+        if ($null -ne $GuiSync -and $GuiSync.Rows.ContainsKey([string]$result.Program)) { $GuiSync.Rows[[string]$result.Program].Detail=$result.Detail }
+        Write-Host ([string]$result.Program+': '+$note) -ForegroundColor Cyan
+    }
 }
 function Get-ProgramFilesRoots {
     # The only places a Craft program may be started from by a shortcut we create.
@@ -1911,12 +1920,11 @@ function Show-ReleaseNotesDialog($owner,[string]$title,[string]$body,[string]$ur
     $dlg.Add_Shown({ $box.SelectionStart = 0; $box.SelectionLength = 0; [void]$btnOk.Focus() })
     try { [void]$dlg.ShowDialog($owner) } finally { $dlg.Dispose() }
 }
-function Show-FreshInstallDialog($owner,[string[]]$names) {
-    # Own Yes/No question for new installations (default No) with the tick
-    # "Create shortcuts on the desktop and in the Start menu" (on by default).
+function Show-ShortcutQuestionDialog($owner,[string]$title,[string]$message,[string]$checkText) {
+    # Own Yes/No question (default No) with a shortcut tick that is on by default.
     # Returns $null for No, otherwise an object with Shortcuts = $true/$false.
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = (L 'Neu installieren' 'Install new programs')
+    $dlg.Text = $title
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MinimizeBox = $false
     $dlg.MaximizeBox = $false
@@ -1924,21 +1932,15 @@ function Show-FreshInstallDialog($owner,[string[]]$names) {
     $dlg.StartPosition = 'CenterParent'
     $dlg.Font = New-Object System.Drawing.Font('Segoe UI',9)
     if ($null -ne $owner -and $null -ne $owner.Icon) { $dlg.Icon = $owner.Icon }
-    $lines = New-Object 'System.Collections.Generic.List[string]'
-    $lines.Add((L 'Folgende Programme neu installieren?' 'Install these programs?'))
-    foreach ($n in $names) { $lines.Add('   ' + $n) }
-    $lines.Add('')
-    $lines.Add((L 'Sie werden von GitHub geladen und genauso geprüft wie Updates (Signatur, Herausgeber, Prüfsumme, Paketdaten). Installiert wird nur, wenn alle Prüfungen bestehen.' 'They are downloaded from GitHub and checked exactly like updates (signature, publisher, checksum, package data). They are only installed if every check passes.'))
-    $lines.Add((L 'Ein automatisches Zurücksetzen gibt es nicht.' 'There is no automatic rollback.'))
     $text = New-Object System.Windows.Forms.Label
     $text.AutoSize = $false
     $text.Location = New-Object System.Drawing.Point(14,14)
-    $text.Text = ($lines -join "`n")
+    $text.Text = ($message -replace "`r`n","`n")
     $measured = [System.Windows.Forms.TextRenderer]::MeasureText($text.Text,$dlg.Font,(New-Object System.Drawing.Size(432,0)),[System.Windows.Forms.TextFormatFlags]::WordBreak)
     $text.Size = New-Object System.Drawing.Size(432,($measured.Height + 6))
     $y = 14 + $text.Height + 10
     $chkShortcuts = New-Object System.Windows.Forms.CheckBox
-    $chkShortcuts.Text = (L 'Verknüpfung auf dem Desktop und im Startmenü anlegen' 'Create a shortcut on the desktop and in the Start menu')
+    $chkShortcuts.Text = $checkText
     $chkShortcuts.Checked = $true
     $chkShortcuts.AutoSize = $true
     $chkShortcuts.Location = New-Object System.Drawing.Point(14,$y)
@@ -1964,6 +1966,16 @@ function Show-FreshInstallDialog($owner,[string[]]$names) {
     try { $answer = $dlg.ShowDialog($owner); $shortcuts = [bool]$chkShortcuts.Checked } finally { $dlg.Dispose() }
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return $null }
     return [pscustomobject]@{ Shortcuts = $shortcuts }
+}
+function Show-FreshInstallDialog($owner,[string[]]$names) {
+    # Question before new installations, with "Create a shortcut ..." (on by default).
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $lines.Add((L 'Folgende Programme neu installieren?' 'Install these programs?'))
+    foreach ($n in $names) { $lines.Add('   ' + $n) }
+    $lines.Add('')
+    $lines.Add((L 'Sie werden von GitHub geladen und genauso geprüft wie Updates (Signatur, Herausgeber, Prüfsumme, Paketdaten). Installiert wird nur, wenn alle Prüfungen bestehen.' 'They are downloaded from GitHub and checked exactly like updates (signature, publisher, checksum, package data). They are only installed if every check passes.'))
+    $lines.Add((L 'Ein automatisches Zurücksetzen gibt es nicht.' 'There is no automatic rollback.'))
+    return (Show-ShortcutQuestionDialog $owner (L 'Neu installieren' 'Install new programs') ($lines -join "`n") (L 'Verknüpfung auf dem Desktop und im Startmenü anlegen' 'Create a shortcut on the desktop and in the Start menu'))
 }
 function Show-UpdaterNoticeDialog($owner,[string]$version) {
     # Click on "New Craft Updater version available": open the page, skip this version or later.
@@ -2137,7 +2149,7 @@ function New-GuiSync {
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
         Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{}); Checks = [hashtable]::Synchronized(@{})
         UpdaterUpdate = $null; Discovered = [hashtable]::Synchronized(@{})
-        FreshOffer = $null; FreshRequest = $null; FreshShortcuts = $false
+        FreshOffer = $null; FreshRequest = $null; FreshShortcuts = $false; UpdateShortcuts = $false
     })
 }
 function Set-CraftTitleBar($form) {
@@ -2584,15 +2596,15 @@ function Start-CraftWindow {
     $btnInstall.Add_Click({
         $question = $ui.PendingQuestion
         if ($null -eq $question) { return }
-        $answer = [System.Windows.Forms.MessageBox]::Show($form,[string]$question.Message,[string]$question.Title,
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Question,
-            [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
-        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        $choice = Show-ShortcutQuestionDialog $form ([string]$question.Title) ([string]$question.Message) (L 'Fehlende Verknüpfungen auf dem Desktop und im Startmenü anlegen' 'Create missing shortcuts on the desktop and in the Start menu')
+        if ($null -eq $choice) { return }
         if ($null -eq $ui.PendingQuestion) { return }
         $ui.PendingQuestion = $null
         $btnInstall.Enabled = $false
         $btnClose.Text = (L 'Schließen' 'Close')
         $btnClose.Enabled = $false
+        # First the tick, then the answer (the background run waits for the answer).
+        $sync.UpdateShortcuts = [bool]$choice.Shortcuts
         $sync.Answer = $true
     })
     # Ticks only for programs that are offered for a new installation (all others stay empty).
