@@ -975,7 +975,7 @@ try {
         $State.Warnings.Count -eq 0
     }
     Test-Case 'Window: ticks only for offered programs, own Yes/No (default No), Close installs nothing' {
-        ($UpdaterText -match [regex]::Escape('if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }')) -and
+        ($UpdaterText -match [regex]::Escape('if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue; return }')) -and
         ($UpdaterText -match '(?s)\$btnFresh\.Add_Click\(\{.*?\$choice = Show-FreshInstallDialog \$form.*?if \(\$null -eq \$choice -or \$null -eq \$ui\.FreshOffer\) \{ return \}') -and
         ($UpdaterText -match '(?s)function Show-ShortcutQuestionDialog.*?\$dlg\.AcceptButton = \$btnNo\s+\$dlg\.CancelButton = \$btnNo.*?\$dlg\.ActiveControl = \$btnNo.*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \$null \}') -and
         ($UpdaterText -match [regex]::Escape("& `$endFreshOffer ([string[]]@())")) -and
