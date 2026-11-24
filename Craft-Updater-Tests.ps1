@@ -338,11 +338,12 @@ try {
     Test-Case 'No copy to Program Files, no shortcut to the updater, no start-folder file' {
         # 5.10: shortcuts exist ONLY for freshly installed Craft programs, in exactly two helpers.
         $outside = [regex]::Replace($UpdaterText,'(?ms)^function (Get-ShortcutTarget|New-CraftShortcut)\(.*?^\}','')
-        ($UpdaterText -notmatch 'Invoke-ProtectedInstall') -and ($outside -notmatch 'WScript\.Shell') -and
-        ($outside -notmatch 'CreateShortcut') -and ($UpdaterText -notmatch 'Startordner\.txt') -and
-        ($UpdaterText -notmatch 'WriteAllBytes') -and
-        ([regex]::Matches($UpdaterText,'New-CraftShortcut \$place\.Folder')).Count -eq 1 -and
-        ($UpdaterText -match [regex]::Escape("if (`$exe.StartsWith((`$ScriptDirectory.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)) { throw"))
+        $parts = @(($UpdaterText -notmatch 'Invoke-ProtectedInstall'), ($outside -notmatch 'WScript\.Shell'),
+        ($outside -notmatch 'CreateShortcut'), ($UpdaterText -notmatch 'Startordner\.txt'),
+        ($UpdaterText -notmatch 'WriteAllBytes'),
+        (([regex]::Matches($UpdaterText,'New-CraftShortcut \$place\.Folder')).Count -eq 1),
+        ($UpdaterText -match [regex]::Escape("if (`$exe.StartsWith((`$ScriptDirectory.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)) { throw")))
+        if (@($parts | Where-Object { -not $_ }).Count -eq 0) { $true } else { 'parts: ' + ($parts -join ',') }
     }
     Test-Case 'Error reports go to the folder next to the launcher' {
         ($UpdaterText -match [regex]::Escape("`$ErrorFolder = Join-Path `$ScriptDirectory (L 'Fehlermeldung' 'Error reports')")) -and
@@ -1100,8 +1101,9 @@ try {
             Set-Item -Path Function:\Add-CraftShortcutsForProgram -Value $savedLinks
             Set-Item -Path Function:\Get-VerifiedInstaller -Value $savedVerified
         }
-        ($without -eq 0) -and ($script:LinkCalls.Count -eq 1) -and ($script:LinkCalls[0] -eq 'FigCraft') -and
-        ($last.Status -eq 'Installiert (neu) - nachgeprueft') -and ($last.Detail -like 'ExitCode 0; Verknüpfung - test')
+        $ok = ($without -eq 0) -and ($script:LinkCalls.Count -eq 1) -and ($script:LinkCalls[0] -eq 'FigCraft') -and
+            ($last.Status -eq 'Installiert (neu) - nachgeprueft') -and ($last.Detail -like 'ExitCode 0; Verknüpfung - test')
+        if ($ok) { $true } else { 'without=' + $without + ' calls=' + ($script:LinkCalls -join ',') + ' status=' + $last.Status + ' detail=' + $last.Detail }
     }
     Test-Case 'Shortcut: never to Craft Updater itself' {
         $p = New-LinkPlaces
