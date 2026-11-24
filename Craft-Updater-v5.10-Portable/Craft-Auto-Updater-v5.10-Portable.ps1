@@ -1439,7 +1439,7 @@ function Get-CraftAppExe($program,$app,[string[]]$allowedRoots=(Get-ProgramFiles
     # .exe must clearly belong to this program. Otherwise: no shortcut.
     $folder=[string]$app.InstallLocation
     if ([string]::IsNullOrWhiteSpace($folder)) {
-        $icon=(([string]$app.DisplayIcon).Trim()).Trim('"') -replace ',\s*-?\d+$',''
+        $icon=((([string]$app.DisplayIcon).Trim()) -replace ',\s*-?\d+$','').Trim().Trim('"')
         if ($icon -match '(?i)\.exe$') { $folder=Split-Path -Parent $icon }
     }
     $folder=$folder.Trim().Trim('"')
@@ -1485,6 +1485,8 @@ function New-CraftShortcut([string]$folder,[string]$programName,[string]$exe) {
     if (-not $safeName) { throw (L 'Ungueltiger Name' 'Invalid name') }
     $linkPath=Join-Path $folder ($safeName+'.lnk')
     if (Test-Path -LiteralPath $linkPath) { return 'exists' }
+    # Never a shortcut to Craft Updater itself (that pattern was flagged by virus scanners in 5.6/5.7).
+    if ($exe.StartsWith(($ScriptDirectory.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)) { throw (L 'Keine Verknuepfung zum Updater selbst' 'No shortcut to the updater itself') }
     $shell=$null; $link=$null
     try {
         $shell=New-Object -ComObject WScript.Shell

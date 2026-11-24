@@ -335,10 +335,14 @@ try {
     }
 
     Write-Host "`n[10] Runs from the extracted folder (no copy to Program Files)"
-    Test-Case 'No copy to Program Files, no shortcut, no start-folder file' {
-        ($UpdaterText -notmatch 'Invoke-ProtectedInstall') -and ($UpdaterText -notmatch 'WScript\.Shell') -and
-        ($UpdaterText -notmatch 'CreateShortcut') -and ($UpdaterText -notmatch 'Startordner\.txt') -and
-        ($UpdaterText -notmatch 'WriteAllBytes')
+    Test-Case 'No copy to Program Files, no shortcut to the updater, no start-folder file' {
+        # 5.10: shortcuts exist ONLY for freshly installed Craft programs, in exactly two helpers.
+        $outside = [regex]::Replace($UpdaterText,'(?ms)^function (Get-ShortcutTarget|New-CraftShortcut)\(.*?^\}','')
+        ($UpdaterText -notmatch 'Invoke-ProtectedInstall') -and ($outside -notmatch 'WScript\.Shell') -and
+        ($outside -notmatch 'CreateShortcut') -and ($UpdaterText -notmatch 'Startordner\.txt') -and
+        ($UpdaterText -notmatch 'WriteAllBytes') -and
+        ([regex]::Matches($UpdaterText,'New-CraftShortcut \$place\.Folder')).Count -eq 1 -and
+        ($UpdaterText -match [regex]::Escape("if (`$exe.StartsWith((`$ScriptDirectory.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)) { throw"))
     }
     Test-Case 'Error reports go to the folder next to the launcher' {
         ($UpdaterText -match [regex]::Escape("`$ErrorFolder = Join-Path `$ScriptDirectory (L 'Fehlermeldung' 'Error reports')")) -and
@@ -1003,6 +1007,9 @@ try {
     }
 
     Write-Host "`n[22] New in 5.10: shortcuts after a new installation"
+    # The tests use $TestDir as the updater folder; here the updater lives in its own subfolder.
+    $savedScriptDirectory = $ScriptDirectory
+    $ScriptDirectory = Join-Path $TestDir 'UpdaterFolder'
     $lnkRoot = Join-Path $TestDir 'Programme'
     $figDir = Join-Path $lnkRoot 'FigCraft'
     [void](New-Item -ItemType Directory -Path $figDir -Force)
@@ -1096,12 +1103,19 @@ try {
         ($without -eq 0) -and ($script:LinkCalls.Count -eq 1) -and ($script:LinkCalls[0] -eq 'FigCraft') -and
         ($last.Status -eq 'Installiert (neu) - nachgeprueft') -and ($last.Detail -like 'ExitCode 0; Verknüpfung - test')
     }
+    Test-Case 'Shortcut: never to Craft Updater itself' {
+        $p = New-LinkPlaces
+        $selfExe = Join-Path $ScriptDirectory 'Craft-Updater.exe'
+        ((Get-ThrowMessage { New-CraftShortcut $p.Desktop 'X' $selfExe }) -like '*Updater selbst*') -and
+        -not (Test-Path -LiteralPath (Join-Path $p.Desktop 'X.lnk'))
+    }
     Test-Case 'Shortcut: the window asks with a tick that is on by default and hands it over' {
         ($UpdaterText -match '(?s)function Show-FreshInstallDialog.*?\$chkShortcuts\.Checked = \$true') -and
         ($UpdaterText -match [regex]::Escape('& $endFreshOffer ([string[]]$picked) ([bool]$choice.Shortcuts)')) -and
         ($UpdaterText -match '(?s)\$sync\.FreshShortcuts = \[bool\]\$shortcuts\s+\$sync\.FreshRequest = \$request') -and
         ($UpdaterText -match [regex]::Escape('Invoke-FreshInstall $names -Approved -CreateShortcuts:$shortcuts'))
     }
+    $ScriptDirectory = $savedScriptDirectory
 
     Test-Case 'Window: skipping hides the notice for this window too' {
         ($UpdaterText -match [regex]::Escape('if (Save-SkippedUpdaterVersion ([string]$notice.Version)) { $sync.UpdaterUpdate = $null; $updateLink.Visible = $false }')) -and
