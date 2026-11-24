@@ -1025,22 +1025,24 @@ try {
         return $p
     }
     function Invoke-LinkTest($places,$app=$figApp) {
-        return (Add-CraftShortcuts $figProgram $app $places.Desktop $places.Start @($places.PublicDesktop) @($places.CommonStart) @($lnkRoot))
+        return (Add-CraftShortcuts $figProgram $app $places.Desktop $places.Start @($places.PublicDesktop) @($places.CommonStart) @($lnkRoot) @())
     }
     Test-Case 'Shortcut: the program file is found and helpers are left out' {
-        $a = Get-CraftAppExe $figProgram $figApp @($lnkRoot)
-        $b = Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon=('"' + $figExe + '",0') }) @($lnkRoot)
-        ($a -eq $figExe) -and ($b -eq $figExe)
+        $a = Get-CraftAppExe $figProgram $figApp @($lnkRoot) @()
+        $b = Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon=('"' + $figExe + '",0') }) @($lnkRoot) @()
+        # Installers without InstallLocation (e.g. MaterialCraft): found through the fallbacks.
+        $c = Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon='C:\Windows\Installer\{X}\FigIcon.exe,0' }) @($lnkRoot) @((Join-Path $lnkRoot 'Missing'),$figDir)
+        ($a -eq $figExe) -and ($b -eq $figExe) -and ($c -eq $figExe)
     }
     Test-Case 'Shortcut: only inside Program Files, unknown or ambiguous = no shortcut' {
         $other = Join-Path $TestDir 'Elsewhere\FigCraft'; [void](New-Item -ItemType Directory -Path $other -Force)
         Set-Content -LiteralPath (Join-Path $other 'figcraft.exe') -Value 'x'
         $twoDir = Join-Path $lnkRoot 'Two'; [void](New-Item -ItemType Directory -Path $twoDir -Force)
         foreach ($n in @('alpha.exe','beta.exe')) { Set-Content -LiteralPath (Join-Path $twoDir $n) -Value 'x' }
-        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$other }) @($lnkRoot) }) -like '*nicht unter Programme*') -and
-        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=($lnkRoot + '\..\Elsewhere\FigCraft') }) @($lnkRoot) }) -like '*nicht unter Programme*') -and
-        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon='' }) @($lnkRoot) }) -like '*unbekannt*') -and
-        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$twoDir }) @($lnkRoot) }) -like '*nicht eindeutig*')
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$other }) @($lnkRoot) @() }) -like '*nicht unter Programme*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=($lnkRoot + '\..\Elsewhere\FigCraft') }) @($lnkRoot) @() }) -like '*nicht unter Programme*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon='' }) @($lnkRoot) @() }) -like '*unbekannt*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$twoDir }) @($lnkRoot) @() }) -like '*nicht eindeutig*')
     }
     Test-Case 'Shortcut: desktop and Start menu get a working shortcut to the program' {
         $p = New-LinkPlaces
@@ -1066,13 +1068,13 @@ try {
         $p = New-LinkPlaces
         Set-Content -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk') -Value 'mine'
         $note = Invoke-LinkTest $p
-        ((Get-Content -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk') -Raw).Trim() -eq 'mine') -and ($note -like '*nicht ersetzt*') -and
+        ((Get-Content -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk') -Raw).Trim() -eq 'mine') -and ($note -like '*Desktop: war schon da*') -and
         (Test-Path -LiteralPath (Join-Path $p.Start 'FigCraft.lnk'))
     }
     Test-Case 'Shortcut: a problem only adds a note, it never fails' {
         $p = New-LinkPlaces
         $note = Invoke-LinkTest $p ([pscustomobject]@{ InstallLocation=''; DisplayIcon='' })
-        $missing = Add-CraftShortcuts $figProgram $figApp (Join-Path $TestDir 'NoSuchDesktop') $p.Start @() @() @($lnkRoot)
+        $missing = Add-CraftShortcuts $figProgram $figApp (Join-Path $TestDir 'NoSuchDesktop') $p.Start @() @() @($lnkRoot) @()
         ($note -like 'Keine Verknüpfung angelegt:*') -and ($missing -like '*Desktop: nicht möglich*') -and ($missing -like '*Startmenü: angelegt*')
     }
     Test-Case 'Shortcut: only after a confirmed new installation and only with the tick' {
@@ -1104,6 +1106,15 @@ try {
         $ok = ($without -eq 0) -and ($script:LinkCalls.Count -eq 1) -and ($script:LinkCalls[0] -eq 'FigCraft') -and
             ($last.Status -eq 'Installiert (neu) - nachgeprueft') -and ($last.Detail -like 'ExitCode 0; Verknüpfung - test')
         if ($ok) { $true } else { 'without=' + $without + ' calls=' + ($script:LinkCalls -join ',') + ' status=' + $last.Status + ' detail=' + $last.Detail }
+    }
+    Test-Case 'Shortcut: an installer shortcut with the program name counts as there (advertised, 5.10)' {
+        $p = New-LinkPlaces
+        $sub = Join-Path $p.CommonStart 'Craft'; [void](New-Item -ItemType Directory -Path $sub -Force)
+        $elsewhere = Join-Path $TestDir 'Installer\FigIcon.exe'; [void](New-Item -ItemType Directory -Path (Split-Path $elsewhere) -Force); Set-Content -LiteralPath $elsewhere -Value 'x'
+        [void](New-CraftShortcut $sub 'FigCraft' $elsewhere)
+        $note = Invoke-LinkTest $p
+        ($note -like '*Desktop: angelegt, Startmenü: war schon da*') -and -not (Test-Path -LiteralPath (Join-Path $p.Start 'FigCraft.lnk')) -and
+        (Test-Path -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk'))
     }
     Test-Case 'Shortcut: never to Craft Updater itself' {
         $p = New-LinkPlaces

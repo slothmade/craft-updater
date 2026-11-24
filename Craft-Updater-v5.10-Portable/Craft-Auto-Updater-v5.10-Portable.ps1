@@ -1442,20 +1442,30 @@ function Get-ProgramFilesRoots {
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') } | Select-Object -Unique)
 }
-function Get-CraftAppExe($program,$app,[string[]]$allowedRoots=(Get-ProgramFilesRoots)) {
-    # Finds the program file of a freshly installed Craft program: install folder from the
-    # registry (or the folder of DisplayIcon), only inside Program Files, no links, and the
-    # .exe must clearly belong to this program. Otherwise: no shortcut.
-    $folder=[string]$app.InstallLocation
-    if ([string]::IsNullOrWhiteSpace($folder)) {
-        $icon=((([string]$app.DisplayIcon).Trim()) -replace ',\s*-?\d+$','').Trim().Trim('"')
-        if ($icon -match '(?i)\.exe$') { $folder=Split-Path -Parent $icon }
+function Get-CraftAppFolderFallbacks($program) {
+    # Not every Craft installer writes InstallLocation. Windows still knows the program file
+    # under "App Paths" (machine-wide, admin only); the usual folder is Program Files\<Name>.
+    $folders=New-Object 'System.Collections.Generic.List[string]'
+    $exeNames=@((([string]$program.Repo -replace '[^a-zA-Z0-9-]','')+'.exe'),(([string]$program.Name -replace '[^a-zA-Z0-9-]','')+'.exe')) | Select-Object -Unique
+    foreach ($exeName in $exeNames) {
+        try {
+            $value=[string](Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\'+$exeName) -ErrorAction Stop).'(default)'
+            $value=$value.Trim().Trim('"')
+            if ($value -match '(?i)\.exe$') { $folders.Add((Split-Path -Parent $value)) }
+        } catch {}
     }
+    foreach ($root in @(Get-ProgramFilesRoots)) { $folders.Add((Join-Path $root ([string]$program.Name))) }
+    return @($folders)
+}
+function Get-CraftAppExeInFolder($program,[string]$folder,[string[]]$allowedRoots) {
+    # One candidate folder: only inside Program Files, no links, and the .exe must clearly
+    # belong to this program.
     $folder=$folder.Trim().Trim('"')
     if ([string]::IsNullOrWhiteSpace($folder) -or $folder -match '[\x00-\x1f"*?<>|]') { throw (L 'Installationsordner unbekannt' 'Installation folder unknown') }
     $folder=[IO.Path]::GetFullPath($folder).TrimEnd('\')
     $inside=@($allowedRoots | Where-Object { $folder.StartsWith(($_.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase) })
     if ($inside.Count -eq 0) { throw (L 'Installationsordner liegt nicht unter Programme' 'Installation folder is not inside Program Files') }
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw (L 'Installationsordner nicht gefunden' 'Installation folder not found') }
     $dir=Get-Item -LiteralPath $folder -Force -ErrorAction Stop
     if (-not $dir.PSIsContainer -or (Test-IsReparsePoint $dir)) { throw (L 'Installationsordner ist kein normaler Ordner' 'Installation folder is not a normal folder') }
     $exes=@(Get-ChildItem -LiteralPath $folder -File -Filter '*.exe' -Force -ErrorAction Stop |
@@ -1467,6 +1477,24 @@ function Get-CraftAppExe($program,$app,[string[]]$allowedRoots=(Get-ProgramFiles
     if ($named.Count -eq 0 -and $exes.Count -eq 1) { return $exes[0].FullName }
     throw (L 'Programmdatei nicht eindeutig gefunden' 'Program file not found unambiguously')
 }
+function Get-CraftAppExe($program,$app,[string[]]$allowedRoots=(Get-ProgramFilesRoots),[string[]]$fallbackFolders=$null) {
+    # Finds the program file of an installed Craft program. Order: InstallLocation from the
+    # registry, the folder of DisplayIcon, then the fallbacks (App Paths, Program Files\<Name>).
+    # The first candidate that passes every rule wins; otherwise: no shortcut.
+    $candidates=New-Object 'System.Collections.Generic.List[string]'
+    if (-not [string]::IsNullOrWhiteSpace([string]$app.InstallLocation)) { $candidates.Add([string]$app.InstallLocation) }
+    $icon=((([string]$app.DisplayIcon).Trim()) -replace ',\s*-?\d+$','').Trim().Trim('"')
+    if ($icon -match '(?i)\.exe$') { $candidates.Add((Split-Path -Parent $icon)) }
+    if ($null -eq $fallbackFolders) { $fallbackFolders=@(Get-CraftAppFolderFallbacks $program) }
+    foreach ($f in $fallbackFolders) { if (-not [string]::IsNullOrWhiteSpace($f)) { $candidates.Add($f) } }
+    if ($candidates.Count -eq 0) { throw (L 'Installationsordner unbekannt' 'Installation folder unknown') }
+    $firstReason=$null
+    foreach ($folder in $candidates) {
+        try { return (Get-CraftAppExeInFolder $program $folder $allowedRoots) }
+        catch { if ($null -eq $firstReason) { $firstReason=$_.Exception.Message } }
+    }
+    throw $firstReason
+}
 function Get-ShortcutTarget([string]$linkPath) {
     $shell=$null; $link=$null
     try {
@@ -1476,11 +1504,14 @@ function Get-ShortcutTarget([string]$linkPath) {
     } catch { return '' }
     finally { Release-ComObject $link; Release-ComObject $shell }
 }
-function Test-ShortcutExists([string[]]$folders,[string]$exe,[switch]$Recurse) {
+function Test-ShortcutExists([string[]]$folders,[string]$exe,[switch]$Recurse,[string]$programName='') {
     # Is there already a shortcut to this program (e.g. one the installer made itself)?
+    # Counts: a shortcut to the program file, or one with the program's name. The installers
+    # create "advertised" Start menu shortcuts that do not point to the .exe directly.
     foreach ($folder in @($folders | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) })) {
         $links=@(Get-ChildItem -LiteralPath $folder -Filter '*.lnk' -File -Recurse:$Recurse -ErrorAction SilentlyContinue | Select-Object -First 500)
         foreach ($link in $links) {
+            if ($programName -and [string]::Equals($link.BaseName,$programName,[StringComparison]::OrdinalIgnoreCase)) { return $true }
             if ([string]::Equals((Get-ShortcutTarget $link.FullName),$exe,[StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
     }
@@ -1508,17 +1539,17 @@ function New-CraftShortcut([string]$folder,[string]$programName,[string]$exe) {
     } finally { Release-ComObject $link; Release-ComObject $shell }
     return 'created'
 }
-function Add-CraftShortcuts($program,$app,[string]$desktop,[string]$startMenu,[string[]]$desktopChecks,[string[]]$startMenuChecks,[string[]]$allowedRoots=(Get-ProgramFilesRoots)) {
+function Add-CraftShortcuts($program,$app,[string]$desktop,[string]$startMenu,[string[]]$desktopChecks,[string[]]$startMenuChecks,[string[]]$allowedRoots=(Get-ProgramFilesRoots),[string[]]$fallbackFolders=$null) {
     # Desktop + Start menu shortcut after a new installation (user ticked it). Skips a place
     # that already has a shortcut to this program. Returns a short note for the result.
-    try { $exe=Get-CraftAppExe $program $app $allowedRoots }
+    try { $exe=Get-CraftAppExe $program $app $allowedRoots $fallbackFolders }
     catch { return ((L 'Keine Verknüpfung angelegt: ' 'No shortcut created: ')+$_.Exception.Message) }
     $parts=New-Object 'System.Collections.Generic.List[string]'
     foreach ($place in @(
         @{ Name=(L 'Desktop' 'desktop'); Folder=$desktop; Checks=$desktopChecks; Recurse=$false },
         @{ Name=(L 'Startmenü' 'Start menu'); Folder=$startMenu; Checks=$startMenuChecks; Recurse=$true })) {
         try {
-            if (Test-ShortcutExists (@($place.Folder)+@($place.Checks)) $exe -Recurse:$place.Recurse) { $parts.Add(((L '{0}: war schon da' '{0}: already there') -f $place.Name)); continue }
+            if (Test-ShortcutExists (@($place.Folder)+@($place.Checks)) $exe -Recurse:$place.Recurse -programName ([string]$program.Name)) { $parts.Add(((L '{0}: war schon da' '{0}: already there') -f $place.Name)); continue }
             $done=New-CraftShortcut $place.Folder ([string]$program.Name) $exe
             if ($done -eq 'created') { $parts.Add(((L '{0}: angelegt' '{0}: created') -f $place.Name)) }
             else { $parts.Add(((L '{0}: gleichnamige Datei vorhanden, nicht ersetzt' '{0}: a file with this name exists, not replaced') -f $place.Name)) }
