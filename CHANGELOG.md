@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.10 (in progress)
+
+- New: **shortcuts after a new installation.** The question before *Install new ...* has a tick *Create a shortcut on the desktop and in the Start menu* (on by default). After a confirmed new installation Craft Updater creates `<Program>.lnk` on your desktop and in your Start menu, pointing to the program file in its installation folder. Only inside *Program Files*; a place that already has a shortcut to the program (also for all users) is left alone, and an existing file with the same name is never replaced. A problem here is only noted, the installation stays successful. Updates do not create shortcuts.
+
 ## 5.9
 
 - New: **MaterialCraft** is updated as well (now 15 Craft programs). Its installer goes through exactly the same checks as all others.

@@ -1,4 +1,4 @@
-﻿CRAFT UPDATER 5.9
+﻿CRAFT UPDATER 5.10
 =================
 (Deutsch: siehe ANLEITUNG.txt)
 
@@ -10,7 +10,7 @@ The program speaks German on a German Windows and English otherwise.
 
 SET UP (once)
 -------------
-1. Drag the folder "Craft-Updater-v5.9-Portable" out of the ZIP onto your
+1. Drag the folder "Craft-Updater-v5.10-Portable" out of the ZIP onto your
    desktop. Do not start it inside the ZIP.
 2. Tip for a quick start: right-click "Craft-Updater-STARTEN.cmd"
    -> "Send to" -> "Desktop (create shortcut)".
@@ -45,6 +45,9 @@ If a Craft program is missing, it shows up as "Not installed" at the end.
 Tick it and click "Install new ...". After its own question ("Yes") it is
 downloaded, checked exactly like an update and installed. Nothing ticked or
 "Close": nothing is installed. This works in the window only.
+In that question "Create a shortcut on the desktop and in the Start menu" is
+ticked already. If there already is a shortcut, no second one is created. If
+you uninstall the program later, delete the desktop shortcut yourself.
 
 The black window sits minimised in the taskbar - it belongs to the updater
 and closes by itself as soon as you close the Craft Updater window.

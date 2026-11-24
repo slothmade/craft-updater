@@ -1,4 +1,4 @@
-﻿CRAFT UPDATER 5.9
+﻿CRAFT UPDATER 5.10
 =================
 (English: see INSTRUCTIONS.txt)
 
@@ -9,7 +9,7 @@ jedes Update vorher genau und installiert erst, wenn du es bestätigst.
 
 EINRICHTEN (einmal)
 -------------------
-1. Den Ordner "Craft-Updater-v5.9-Portable" aus der ZIP auf den Desktop
+1. Den Ordner "Craft-Updater-v5.10-Portable" aus der ZIP auf den Desktop
    ziehen. Nicht direkt in der ZIP starten.
 2. Tipp für schnellen Start: Rechtsklick auf "Craft-Updater-STARTEN.cmd"
    -> "Senden an" -> "Desktop (Verknüpfung erstellen)".
@@ -45,6 +45,10 @@ der Liste. Du kannst es anhaken und auf "Neu installieren ..." klicken.
 Nach einer eigenen Rückfrage ("Ja") wird es geladen, genauso geprüft wie
 ein Update und installiert. Nichts angehakt oder "Schließen": es wird nichts
 installiert. Das geht nur im Fenster.
+In der Rückfrage ist "Verknüpfung auf dem Desktop und im Startmenü anlegen"
+schon angehakt. Gibt es dort schon eine Verknüpfung, wird keine zweite
+angelegt. Wenn du das Programm später deinstallierst, lösch die Verknüpfung
+auf dem Desktop selbst.
 
 Das schwarze Fenster liegt minimiert in der Taskleiste - es gehört dazu und
 schließt sich von selbst, sobald du das Craft-Updater-Fenster schließt.

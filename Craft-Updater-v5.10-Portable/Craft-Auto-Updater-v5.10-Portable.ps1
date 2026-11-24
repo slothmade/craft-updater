@@ -1,4 +1,4 @@
-﻿# Craft Auto-Updater v5.9 Portable - Windows PowerShell 5.1
+﻿# Craft Auto-Updater v5.10 Portable - Windows PowerShell 5.1
 # Installs updates only after every security check has passed and after one explicit
 # approval (window: "Install" button plus confirmation; console: type YES / JA).
 #
@@ -70,7 +70,7 @@ function L([string]$de,[string]$en) {
 # ============================================================================
 # 1. CONFIGURATION
 # ============================================================================
-$UpdaterVersion = '5.9'
+$UpdaterVersion = '5.10'
 # Project page (shown small at the bottom of the window).
 $ProjectUrl = 'https://github.com/slothmade/craft-updater'
 # Own releases: only used for the notice "new Craft Updater version available".
@@ -1362,7 +1362,7 @@ function Get-FreshInstallChoices {
         if ($null -ne $last -and $last.Status -eq 'Nicht installiert') { [string]$program.Name }
     })
 }
-function Invoke-FreshInstall([string[]]$names,[switch]$Approved) {
+function Invoke-FreshInstall([string[]]$names,[switch]$Approved,[switch]$CreateShortcuts) {
     # New installation of Craft programs that are not installed yet. Only called after the user
     # ticked them in the window and answered the separate question with Yes (-Approved).
     # Exactly the same checks as for updates; one security error stops everything.
@@ -1401,6 +1401,7 @@ function Invoke-FreshInstall([string[]]$names,[switch]$Approved) {
     if ($State.SecurityBlocked) { return }
     Set-GuiPhase 'Installieren'
     $installIndex=0
+    $firstResult=$State.Results.Count
     # No @() around the list: on an empty generic list Windows PowerShell 5.1 throws
     # "Argument types do not match".
     foreach ($e in $State.Eligible) {
@@ -1409,8 +1410,118 @@ function Invoke-FreshInstall([string[]]$names,[switch]$Approved) {
         Set-GuiStatus ((L 'Installiere {0} ({1} von {2}) - bitte warten ...' 'Installing {0} ({1} of {2}) - please wait ...') -f $e.Item.Program.Name,$installIndex,$State.Eligible.Count) ($installIndex - 1) $State.Eligible.Count
         Install-EligibleUpdate $e
     }
+    # Shortcuts only if the user kept the tick, and only for programs whose new installation
+    # was confirmed above. A problem here never turns a good installation into an error.
+    if ($CreateShortcuts) {
+        for ($i=$firstResult; $i -lt $State.Results.Count; $i++) {
+            $result=$State.Results[$i]
+            if ([string]$result.Status -notmatch '^Installiert \(neu\)') { continue }
+            $program=@($Programs | Where-Object { [string]$_.Name -eq [string]$result.Program })[0]
+            if ($null -eq $program) { continue }
+            $note=Add-CraftShortcutsForProgram $program
+            $result.Detail=[string]$result.Detail+'; '+$note
+            if ($null -ne $GuiSync -and $GuiSync.Rows.ContainsKey([string]$result.Program)) { $GuiSync.Rows[[string]$result.Program].Detail=$result.Detail }
+            Write-Host ([string]$result.Program+': '+$note) -ForegroundColor Cyan
+        }
+    }
     Set-GuiStatus (L 'Neuinstallation abgeschlossen.' 'New installation finished.') $State.Eligible.Count $State.Eligible.Count
     Set-GuiPhase 'Fertig'
+}
+function Get-ProgramFilesRoots {
+    # The only places a Craft program may be started from by a shortcut we create.
+    return @(@($env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramW6432) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') } | Select-Object -Unique)
+}
+function Get-CraftAppExe($program,$app,[string[]]$allowedRoots=(Get-ProgramFilesRoots)) {
+    # Finds the program file of a freshly installed Craft program: install folder from the
+    # registry (or the folder of DisplayIcon), only inside Program Files, no links, and the
+    # .exe must clearly belong to this program. Otherwise: no shortcut.
+    $folder=[string]$app.InstallLocation
+    if ([string]::IsNullOrWhiteSpace($folder)) {
+        $icon=(([string]$app.DisplayIcon).Trim()).Trim('"') -replace ',\s*-?\d+$',''
+        if ($icon -match '(?i)\.exe$') { $folder=Split-Path -Parent $icon }
+    }
+    $folder=$folder.Trim().Trim('"')
+    if ([string]::IsNullOrWhiteSpace($folder) -or $folder -match '[\x00-\x1f"*?<>|]') { throw (L 'Installationsordner unbekannt' 'Installation folder unknown') }
+    $folder=[IO.Path]::GetFullPath($folder).TrimEnd('\')
+    $inside=@($allowedRoots | Where-Object { $folder.StartsWith(($_.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase) })
+    if ($inside.Count -eq 0) { throw (L 'Installationsordner liegt nicht unter Programme' 'Installation folder is not inside Program Files') }
+    $dir=Get-Item -LiteralPath $folder -Force -ErrorAction Stop
+    if (-not $dir.PSIsContainer -or (Test-IsReparsePoint $dir)) { throw (L 'Installationsordner ist kein normaler Ordner' 'Installation folder is not a normal folder') }
+    $exes=@(Get-ChildItem -LiteralPath $folder -File -Filter '*.exe' -Force -ErrorAction Stop |
+        Where-Object { $_.Extension -eq '.exe' -and $_.Name -notmatch '(?i)unins|uninstall|update|crash|helper|-cli\.exe$' -and -not (Test-IsReparsePoint $_) })
+    $key=([string]$program.Repo -replace '[^a-zA-Z0-9]','')
+    $nameKey=([string]$program.Name -replace '[^a-zA-Z0-9]','')
+    $named=@($exes | Where-Object { $b=($_.BaseName -replace '[^a-zA-Z0-9]',''); ($b -ieq $key) -or ($b -ieq $nameKey) })
+    if ($named.Count -eq 1) { return $named[0].FullName }
+    if ($named.Count -eq 0 -and $exes.Count -eq 1) { return $exes[0].FullName }
+    throw (L 'Programmdatei nicht eindeutig gefunden' 'Program file not found unambiguously')
+}
+function Get-ShortcutTarget([string]$linkPath) {
+    $shell=$null; $link=$null
+    try {
+        $shell=New-Object -ComObject WScript.Shell
+        $link=$shell.CreateShortcut($linkPath)
+        return [string]$link.TargetPath
+    } catch { return '' }
+    finally { Release-ComObject $link; Release-ComObject $shell }
+}
+function Test-ShortcutExists([string[]]$folders,[string]$exe,[switch]$Recurse) {
+    # Is there already a shortcut to this program (e.g. one the installer made itself)?
+    foreach ($folder in @($folders | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) })) {
+        $links=@(Get-ChildItem -LiteralPath $folder -Filter '*.lnk' -File -Recurse:$Recurse -ErrorAction SilentlyContinue | Select-Object -First 500)
+        foreach ($link in $links) {
+            if ([string]::Equals((Get-ShortcutTarget $link.FullName),$exe,[StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+    }
+    return $false
+}
+function New-CraftShortcut([string]$folder,[string]$programName,[string]$exe) {
+    # Creates "<Program>.lnk" in the folder. Never overwrites an existing file.
+    # Returns 'created', 'exists' or throws.
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw ((L 'Ordner fehlt: {0}' 'Folder missing: {0}') -f $folder) }
+    $safeName=($programName -replace '[\\/:*?"<>|]','').Trim()
+    if (-not $safeName) { throw (L 'Ungueltiger Name' 'Invalid name') }
+    $linkPath=Join-Path $folder ($safeName+'.lnk')
+    if (Test-Path -LiteralPath $linkPath) { return 'exists' }
+    $shell=$null; $link=$null
+    try {
+        $shell=New-Object -ComObject WScript.Shell
+        $link=$shell.CreateShortcut($linkPath)
+        $link.TargetPath=$exe
+        $link.WorkingDirectory=(Split-Path -Parent $exe)
+        $link.IconLocation=($exe+',0')
+        $link.Description=$programName
+        $link.Save()
+    } finally { Release-ComObject $link; Release-ComObject $shell }
+    return 'created'
+}
+function Add-CraftShortcuts($program,$app,[string]$desktop,[string]$startMenu,[string[]]$desktopChecks,[string[]]$startMenuChecks,[string[]]$allowedRoots=(Get-ProgramFilesRoots)) {
+    # Desktop + Start menu shortcut after a new installation (user ticked it). Skips a place
+    # that already has a shortcut to this program. Returns a short note for the result.
+    try { $exe=Get-CraftAppExe $program $app $allowedRoots }
+    catch { return ((L 'Keine Verknüpfung angelegt: ' 'No shortcut created: ')+$_.Exception.Message) }
+    $parts=New-Object 'System.Collections.Generic.List[string]'
+    foreach ($place in @(
+        @{ Name=(L 'Desktop' 'desktop'); Folder=$desktop; Checks=$desktopChecks; Recurse=$false },
+        @{ Name=(L 'Startmenü' 'Start menu'); Folder=$startMenu; Checks=$startMenuChecks; Recurse=$true })) {
+        try {
+            if (Test-ShortcutExists (@($place.Folder)+@($place.Checks)) $exe -Recurse:$place.Recurse) { $parts.Add(((L '{0}: war schon da' '{0}: already there') -f $place.Name)); continue }
+            $done=New-CraftShortcut $place.Folder ([string]$program.Name) $exe
+            if ($done -eq 'created') { $parts.Add(((L '{0}: angelegt' '{0}: created') -f $place.Name)) }
+            else { $parts.Add(((L '{0}: gleichnamige Datei vorhanden, nicht ersetzt' '{0}: a file with this name exists, not replaced') -f $place.Name)) }
+        } catch { $parts.Add(((L '{0}: nicht möglich ({1})' '{0}: not possible ({1})') -f $place.Name,$_.Exception.Message)) }
+    }
+    return ((L 'Verknüpfung - ' 'Shortcut - ')+($parts -join ', '))
+}
+function Add-CraftShortcutsForProgram($program) {
+    # Real places: the current user's desktop and Start menu. Shortcuts that already exist
+    # there or for all users (public desktop, common Start menu) are respected.
+    $app=Get-RegistryApp $program.Pattern $program.Name
+    if ($null -eq $app) { return (L 'Keine Verknüpfung angelegt: Registry-Eintrag nicht gefunden' 'No shortcut created: registry entry not found') }
+    return Add-CraftShortcuts $program $app ([Environment]::GetFolderPath('Desktop')) ([Environment]::GetFolderPath('Programs')) `
+        @([Environment]::GetFolderPath('CommonDesktopDirectory')) @([Environment]::GetFolderPath('CommonPrograms'))
 }
 function Protect-ReportText([string]$text,[string]$userName=$env:USERNAME,[string]$computerName=$env:COMPUTERNAME,[string]$userProfile=$env:USERPROFILE) {
     # Error report only: replace the user's profile path, user name and computer name so the
@@ -1628,6 +1739,7 @@ function Invoke-FreshInstallOffer {
     $choices = @(Get-FreshInstallChoices)
     if ($choices.Count -eq 0) { return }
     $GuiSync.FreshRequest = $null
+    $GuiSync.FreshShortcuts = $false
     $GuiSync.FreshOffer = [pscustomobject]@{ Id=[guid]::NewGuid().ToString('N'); Choices=[string[]]$choices }
     Set-GuiPhase 'Angebot'
     try {
@@ -1639,7 +1751,9 @@ function Invoke-FreshInstallOffer {
     $names = @($GuiSync.FreshRequest | ForEach-Object { [string]$_ } | Where-Object { $_ })
     if ($names.Count -eq 0) { return }
     Write-Host ((L 'Neuinstallation freigegeben fuer: {0}' 'New installation approved for: {0}') -f ($names -join ', ')) -ForegroundColor Cyan
-    try { Invoke-FreshInstall $names -Approved }
+    $shortcuts = [bool]$GuiSync.FreshShortcuts
+    if ($shortcuts) { Write-Host (L 'Verknuepfungen (Desktop + Startmenue) werden angelegt.' 'Shortcuts (desktop + Start menu) will be created.') -ForegroundColor Cyan }
+    try { Invoke-FreshInstall $names -Approved -CreateShortcuts:$shortcuts }
     finally {
         Write-RunSummary
         Invoke-CraftMaintenance
@@ -1794,6 +1908,60 @@ function Show-ReleaseNotesDialog($owner,[string]$title,[string]$body,[string]$ur
     $dlg.Controls.AddRange(@($box,$hint,$linkTitle,$link,$btnCopy,$btnOk))
     $dlg.Add_Shown({ $box.SelectionStart = 0; $box.SelectionLength = 0; [void]$btnOk.Focus() })
     try { [void]$dlg.ShowDialog($owner) } finally { $dlg.Dispose() }
+}
+function Show-FreshInstallDialog($owner,[string[]]$names) {
+    # Own Yes/No question for new installations (default No) with the tick
+    # "Create shortcuts on the desktop and in the Start menu" (on by default).
+    # Returns $null for No, otherwise an object with Shortcuts = $true/$false.
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = (L 'Neu installieren' 'Install new programs')
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MinimizeBox = $false
+    $dlg.MaximizeBox = $false
+    $dlg.ShowInTaskbar = $false
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.Font = New-Object System.Drawing.Font('Segoe UI',9)
+    if ($null -ne $owner -and $null -ne $owner.Icon) { $dlg.Icon = $owner.Icon }
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $lines.Add((L 'Folgende Programme neu installieren?' 'Install these programs?'))
+    foreach ($n in $names) { $lines.Add('   ' + $n) }
+    $lines.Add('')
+    $lines.Add((L 'Sie werden von GitHub geladen und genauso geprüft wie Updates (Signatur, Herausgeber, Prüfsumme, Paketdaten). Installiert wird nur, wenn alle Prüfungen bestehen.' 'They are downloaded from GitHub and checked exactly like updates (signature, publisher, checksum, package data). They are only installed if every check passes.'))
+    $lines.Add((L 'Ein automatisches Zurücksetzen gibt es nicht.' 'There is no automatic rollback.'))
+    $text = New-Object System.Windows.Forms.Label
+    $text.AutoSize = $false
+    $text.Location = New-Object System.Drawing.Point(14,14)
+    $text.Text = ($lines -join "`n")
+    $measured = [System.Windows.Forms.TextRenderer]::MeasureText($text.Text,$dlg.Font,(New-Object System.Drawing.Size(432,0)),[System.Windows.Forms.TextFormatFlags]::WordBreak)
+    $text.Size = New-Object System.Drawing.Size(432,($measured.Height + 6))
+    $y = 14 + $text.Height + 10
+    $chkShortcuts = New-Object System.Windows.Forms.CheckBox
+    $chkShortcuts.Text = (L 'Verknüpfung auf dem Desktop und im Startmenü anlegen' 'Create a shortcut on the desktop and in the Start menu')
+    $chkShortcuts.Checked = $true
+    $chkShortcuts.AutoSize = $true
+    $chkShortcuts.Location = New-Object System.Drawing.Point(14,$y)
+    $y += 34
+    $btnYes = New-Object System.Windows.Forms.Button
+    $btnYes.Text = (L 'Ja' 'Yes')
+    $btnYes.Location = New-Object System.Drawing.Point(276,$y)
+    $btnYes.Size = New-Object System.Drawing.Size(80,30)
+    $btnYes.DialogResult = [System.Windows.Forms.DialogResult]::Yes
+    $btnNo = New-Object System.Windows.Forms.Button
+    $btnNo.Text = (L 'Nein' 'No')
+    $btnNo.Location = New-Object System.Drawing.Point(366,$y)
+    $btnNo.Size = New-Object System.Drawing.Size(80,30)
+    $btnNo.DialogResult = [System.Windows.Forms.DialogResult]::No
+    $dlg.ClientSize = New-Object System.Drawing.Size(460,($y + 44))
+    # Default is No: Enter and Esc both mean No.
+    $dlg.AcceptButton = $btnNo
+    $dlg.CancelButton = $btnNo
+    $dlg.Controls.AddRange(@($text,$chkShortcuts,$btnYes,$btnNo))
+    $dlg.ActiveControl = $btnNo
+    $answer = [System.Windows.Forms.DialogResult]::No
+    $shortcuts = $false
+    try { $answer = $dlg.ShowDialog($owner); $shortcuts = [bool]$chkShortcuts.Checked } finally { $dlg.Dispose() }
+    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return $null }
+    return [pscustomobject]@{ Shortcuts = $shortcuts }
 }
 function Show-UpdaterNoticeDialog($owner,[string]$version) {
     # Click on "New Craft Updater version available": open the page, skip this version or later.
@@ -1967,7 +2135,7 @@ function New-GuiSync {
         Question = $null; Answer = $null; WindowClosed = $false; Phase = 'Suche'
         Summary = $null; ErrorReport = ''; ExitCode = 0; Notes = [hashtable]::Synchronized(@{}); Checks = [hashtable]::Synchronized(@{})
         UpdaterUpdate = $null; Discovered = [hashtable]::Synchronized(@{})
-        FreshOffer = $null; FreshRequest = $null
+        FreshOffer = $null; FreshRequest = $null; FreshShortcuts = $false
     })
 }
 function Set-CraftTitleBar($form) {
@@ -2433,13 +2601,15 @@ function Start-CraftWindow {
     })
     $list.Add_ItemChecked({ $btnFresh.Enabled = ($null -ne $ui.FreshOffer) -and ($list.CheckedItems.Count -gt 0) })
     $endFreshOffer = {
-        param($request)
+        param($request,$shortcuts)
         $ui.FreshOffer = $null
         $btnFresh.Enabled = $false
         $btnFresh.Visible = $false
         $list.CheckBoxes = $false
         $btnInstall.Visible = $true
         $btnClose.Enabled = $false
+        # First the tick, then the request (the background run waits for the request).
+        $sync.FreshShortcuts = [bool]$shortcuts
         $sync.FreshRequest = $request
     }
     $btnFresh.Add_Click({
@@ -2447,24 +2617,16 @@ function Start-CraftWindow {
         if ($null -eq $offer) { return }
         $picked = @(foreach ($it in $list.CheckedItems) { $n = [string]$it.Text; if (@($offer.Choices) -contains $n) { $n } })
         if ($picked.Count -eq 0) { return }
-        $lines = New-Object 'System.Collections.Generic.List[string]'
-        $lines.Add((L 'Folgende Programme neu installieren?' 'Install these programs?'))
-        foreach ($n in $picked) { $lines.Add('   ' + $n) }
-        $lines.Add('')
-        $lines.Add((L 'Sie werden von GitHub geladen und genauso geprüft wie Updates (Signatur, Herausgeber, Prüfsumme, Paketdaten). Installiert wird nur, wenn alle Prüfungen bestehen.' 'They are downloaded from GitHub and checked exactly like updates (signature, publisher, checksum, package data). They are only installed if every check passes.'))
-        $lines.Add((L 'Ein automatisches Zurücksetzen gibt es nicht.' 'There is no automatic rollback.'))
-        $answer = [System.Windows.Forms.MessageBox]::Show($form,($lines -join "`r`n"),(L 'Neu installieren' 'Install new programs'),
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Question,
-            [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
-        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes -or $null -eq $ui.FreshOffer) { return }
+        $choice = Show-FreshInstallDialog $form ([string[]]$picked)
+        if ($null -eq $choice -or $null -eq $ui.FreshOffer) { return }
         $status.ForeColor = [System.Drawing.SystemColors]::ControlText
-        & $endFreshOffer ([string[]]$picked)
+        & $endFreshOffer ([string[]]$picked) ([bool]$choice.Shortcuts)
     })
     $btnClose.Add_Click({
         if ($null -ne $ui.FreshOffer) {
             # "Close" while new installations are offered = install nothing, then close.
             $ui.CloseWhenDone = $true
-            & $endFreshOffer ([string[]]@())
+            & $endFreshOffer ([string[]]@()) $false
             return
         }
         if ($null -ne $ui.PendingQuestion) {
@@ -2533,7 +2695,7 @@ function Start-CraftWindow {
         if ($null -ne $ui.FreshOffer) {
             # Closing while new installations are offered = install nothing.
             $ui.CloseWhenDone = $true
-            & $endFreshOffer ([string[]]@())
+            & $endFreshOffer ([string[]]@()) $false
             return
         }
         if ($null -ne $ui.PendingQuestion) {

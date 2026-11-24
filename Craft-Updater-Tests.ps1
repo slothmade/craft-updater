@@ -908,18 +908,18 @@ try {
 
     Write-Host "`n[20] New in 5.9: new installation offered in the window after the run"
     $RealFreshInstall = ${function:Invoke-FreshInstall}
-    function Invoke-FreshInstall([string[]]$names,[switch]$Approved) { $script:FreshCalls += ,@{ Names=@($names); Approved=[bool]$Approved } }
+    function Invoke-FreshInstall([string[]]$names,[switch]$Approved,[switch]$CreateShortcuts) { $script:FreshCalls += ,@{ Names=@($names); Approved=[bool]$Approved; Shortcuts=[bool]$CreateShortcuts } }
     # A helper runspace plays the window: waits for the offer, then answers (or closes).
-    function Invoke-WithFreshAnswer($request,[switch]$CloseWindow) {
+    function Invoke-WithFreshAnswer($request,[switch]$CloseWindow,[switch]$Shortcuts) {
         $sync = New-GuiSync
         $helper = [powershell]::Create()
         [void]$helper.AddScript({
-            param($s,$r,$close)
+            param($s,$r,$close,$lnk)
             $until = [datetime]::UtcNow.AddSeconds(5)
             while ($null -eq $s.FreshOffer -and [datetime]::UtcNow -lt $until) { Start-Sleep -Milliseconds 20 }
             if ($null -ne $s.FreshOffer) { $s.SeenOffer = $s.FreshOffer }
-            if ($close -or $null -eq $s.FreshOffer) { $s.WindowClosed = $true } else { $s.FreshRequest = [string[]]$r }
-        }).AddArgument($sync).AddArgument($request).AddArgument([bool]$CloseWindow)
+            if ($close -or $null -eq $s.FreshOffer) { $s.WindowClosed = $true } else { $s.FreshShortcuts = $lnk; $s.FreshRequest = [string[]]$r }
+        }).AddArgument($sync).AddArgument($request).AddArgument([bool]$CloseWindow).AddArgument([bool]$Shortcuts)
         $handle = $helper.BeginInvoke()
         try { $script:GuiSync = $sync; Invoke-FreshInstallOffer }
         finally { $script:GuiSync = $null; [void]$helper.EndInvoke($handle); $helper.Dispose() }
@@ -944,7 +944,12 @@ try {
         Set-OfferRun
         $sync = Invoke-WithFreshAnswer @('FigCraft')
         ($script:FreshCalls.Count -eq 1) -and ($script:FreshCalls[0].Names -join ',') -eq 'FigCraft' -and $script:FreshCalls[0].Approved -and
-        (@($sync.SeenOffer.Choices) -join ',') -eq 'FigCraft' -and ($null -eq $sync.FreshOffer)
+        (@($sync.SeenOffer.Choices) -join ',') -eq 'FigCraft' -and ($null -eq $sync.FreshOffer) -and -not $script:FreshCalls[0].Shortcuts
+    }
+    Test-Case 'Offer: the shortcut tick is handed over to the installation (5.10)' {
+        Set-OfferRun
+        $null = Invoke-WithFreshAnswer @('FigCraft') -Shortcuts
+        ($script:FreshCalls.Count -eq 1) -and $script:FreshCalls[0].Approved -and $script:FreshCalls[0].Shortcuts
     }
     Test-Case 'Offer: "Close" (empty answer) or a closed window installs nothing' {
         Set-OfferRun
@@ -966,7 +971,8 @@ try {
     }
     Test-Case 'Window: ticks only for offered programs, own Yes/No (default No), Close installs nothing' {
         ($UpdaterText -match [regex]::Escape('if ($null -eq $ui.FreshOffer -or @($ui.FreshOffer.Choices) -notcontains $name) { $checkArgs.NewValue = $checkArgs.CurrentValue }')) -and
-        ($UpdaterText -match '(?s)\$btnFresh\.Add_Click\(\{.*?MessageBoxDefaultButton\]::Button2\).*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes') -and
+        ($UpdaterText -match '(?s)\$btnFresh\.Add_Click\(\{.*?\$choice = Show-FreshInstallDialog \$form.*?if \(\$null -eq \$choice -or \$null -eq \$ui\.FreshOffer\) \{ return \}') -and
+        ($UpdaterText -match '(?s)function Show-FreshInstallDialog.*?\$dlg\.AcceptButton = \$btnNo\s+\$dlg\.CancelButton = \$btnNo.*?\$dlg\.ActiveControl = \$btnNo.*?if \(\$answer -ne \[System\.Windows\.Forms\.DialogResult\]::Yes\) \{ return \$null \}') -and
         ($UpdaterText -match [regex]::Escape("& `$endFreshOffer ([string[]]@())")) -and
         ($UpdaterText -match [regex]::Escape('foreach ($it in $list.Items) { $it.Checked = $false }')) -and
         ($UpdaterText -match '(?s)Invoke-Installation\s+\} finally \{.*?\}\s+Invoke-FreshInstallOffer\s+\}')
@@ -994,6 +1000,107 @@ try {
         ($UpdaterText -match [regex]::Escape('Issuer=$issuer;')) -and
         ($UpdaterText -match [regex]::Escape('$list.ContextMenuStrip = $listMenu')) -and
         ($UpdaterText -match [regex]::Escape("[void]`$listMenu.Items.Add((L 'Prüfdetails' 'Check details'),`$null,{ & `$showChecks })"))
+    }
+
+    Write-Host "`n[22] New in 5.10: shortcuts after a new installation"
+    $lnkRoot = Join-Path $TestDir 'Programme'
+    $figDir = Join-Path $lnkRoot 'FigCraft'
+    [void](New-Item -ItemType Directory -Path $figDir -Force)
+    foreach ($n in @('figcraft.exe','figcraft-cli.exe','unins000.exe','readme.txt')) { Set-Content -LiteralPath (Join-Path $figDir $n) -Value 'x' }
+    $figExe = Join-Path $figDir 'figcraft.exe'
+    $figProgram = @($Programs | Where-Object { $_.Name -eq 'FigCraft' })[0]
+    $figApp = [pscustomobject]@{ InstallLocation=($figDir + '\'); DisplayIcon='' }
+    function New-LinkPlaces {
+        $base = Join-Path $TestDir ('Links-' + [guid]::NewGuid().ToString('N'))
+        $p = @{ Desktop=(Join-Path $base 'Desktop'); Start=(Join-Path $base 'Start'); PublicDesktop=(Join-Path $base 'PublicDesktop'); CommonStart=(Join-Path $base 'CommonStart\Programs') }
+        foreach ($k in @($p.Keys)) { [void](New-Item -ItemType Directory -Path $p[$k] -Force) }
+        return $p
+    }
+    function Invoke-LinkTest($places,$app=$figApp) {
+        return (Add-CraftShortcuts $figProgram $app $places.Desktop $places.Start @($places.PublicDesktop) @($places.CommonStart) @($lnkRoot))
+    }
+    Test-Case 'Shortcut: the program file is found and helpers are left out' {
+        $a = Get-CraftAppExe $figProgram $figApp @($lnkRoot)
+        $b = Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon=('"' + $figExe + '",0') }) @($lnkRoot)
+        ($a -eq $figExe) -and ($b -eq $figExe)
+    }
+    Test-Case 'Shortcut: only inside Program Files, unknown or ambiguous = no shortcut' {
+        $other = Join-Path $TestDir 'Elsewhere\FigCraft'; [void](New-Item -ItemType Directory -Path $other -Force)
+        Set-Content -LiteralPath (Join-Path $other 'figcraft.exe') -Value 'x'
+        $twoDir = Join-Path $lnkRoot 'Two'; [void](New-Item -ItemType Directory -Path $twoDir -Force)
+        foreach ($n in @('alpha.exe','beta.exe')) { Set-Content -LiteralPath (Join-Path $twoDir $n) -Value 'x' }
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$other }) @($lnkRoot) }) -like '*nicht unter Programme*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=($lnkRoot + '\..\Elsewhere\FigCraft') }) @($lnkRoot) }) -like '*nicht unter Programme*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=''; DisplayIcon='' }) @($lnkRoot) }) -like '*unbekannt*') -and
+        ((Get-ThrowMessage { Get-CraftAppExe $figProgram ([pscustomobject]@{ InstallLocation=$twoDir }) @($lnkRoot) }) -like '*nicht eindeutig*')
+    }
+    Test-Case 'Shortcut: desktop and Start menu get a working shortcut to the program' {
+        $p = New-LinkPlaces
+        $note = Invoke-LinkTest $p
+        $d = Join-Path $p.Desktop 'FigCraft.lnk'; $s = Join-Path $p.Start 'FigCraft.lnk'
+        (Test-Path -LiteralPath $d) -and (Test-Path -LiteralPath $s) -and
+        ((Get-ShortcutTarget $d) -eq $figExe) -and ((Get-ShortcutTarget $s) -eq $figExe) -and
+        ($note -like 'Verknüpfung - Desktop: angelegt, Startmenü: angelegt')
+    }
+    Test-Case 'Shortcut: existing shortcuts (also for all users) are respected, nothing twice' {
+        $p = New-LinkPlaces
+        $null = Invoke-LinkTest $p
+        $again = Invoke-LinkTest $p
+        $q = New-LinkPlaces
+        [void](New-CraftShortcut $q.PublicDesktop 'FigCraft' $figExe)
+        $sub = Join-Path $q.CommonStart 'FigCraft'; [void](New-Item -ItemType Directory -Path $sub -Force)
+        [void](New-CraftShortcut $sub 'FigCraft' $figExe)
+        $common = Invoke-LinkTest $q
+        ($again -like '*Desktop: war schon da, Startmenü: war schon da*') -and ($common -like '*Desktop: war schon da, Startmenü: war schon da*') -and
+        -not (Test-Path -LiteralPath (Join-Path $q.Desktop 'FigCraft.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $q.Start 'FigCraft.lnk'))
+    }
+    Test-Case 'Shortcut: a file with the same name is never replaced' {
+        $p = New-LinkPlaces
+        Set-Content -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk') -Value 'mine'
+        $note = Invoke-LinkTest $p
+        ((Get-Content -LiteralPath (Join-Path $p.Desktop 'FigCraft.lnk') -Raw).Trim() -eq 'mine') -and ($note -like '*nicht ersetzt*') -and
+        (Test-Path -LiteralPath (Join-Path $p.Start 'FigCraft.lnk'))
+    }
+    Test-Case 'Shortcut: a problem only adds a note, it never fails' {
+        $p = New-LinkPlaces
+        $note = Invoke-LinkTest $p ([pscustomobject]@{ InstallLocation=''; DisplayIcon='' })
+        $missing = Add-CraftShortcuts $figProgram $figApp (Join-Path $TestDir 'NoSuchDesktop') $p.Start @() @() @($lnkRoot)
+        ($note -like 'Keine Verknüpfung angelegt:*') -and ($missing -like '*Desktop: nicht möglich*') -and ($missing -like '*Startmenü: angelegt*')
+    }
+    Test-Case 'Shortcut: only after a confirmed new installation and only with the tick' {
+        Set-FreshRun; $script:LinkCalls = @()
+        $Fake.Release = New-FakeRelease 'v0.14.0' @()
+        $Fake.CandidateError = @{}
+        $savedInstall = ${function:Install-EligibleUpdate}
+        $savedLinks = ${function:Add-CraftShortcutsForProgram}
+        $savedVerified = ${function:Get-VerifiedInstaller}
+        Set-Item -Path Function:\Get-VerifiedInstaller -Value { param($program,$release,$app,[string]$localText,[string]$remoteText,[version]$remote,[switch]$FreshInstall)
+            $item = New-FakeInstaller (New-FakeItem $program.Name)
+            return (New-PendingItem $program $null '' 'v0.14.0' ([version]'0.14.0.0') $item.File ('A'*64) $null ([bool]$FreshInstall)) }
+        Set-Item -Path Function:\Install-EligibleUpdate -Value { param($e) Add-Result $e.Item.Program.Name '' $e.Item.Latest 'Installiert (neu) - nachgeprueft' 'ExitCode 0' }
+        Set-Item -Path Function:\Add-CraftShortcutsForProgram -Value { param($program) $script:LinkCalls += [string]$program.Name; return 'Verknüpfung - test' }
+        try {
+            Invoke-FreshInstall @('FigCraft') -Approved
+            $without = $script:LinkCalls.Count
+            Set-FreshRun
+            Invoke-FreshInstall @('FigCraft') -Approved -CreateShortcuts
+            $last = Get-LastResult
+            Set-FreshRun
+            Set-Item -Path Function:\Install-EligibleUpdate -Value { param($e) Add-Result $e.Item.Program.Name '' $e.Item.Latest 'Installationsfehler' 'ExitCode 1603' }
+            Invoke-FreshInstall @('FigCraft') -Approved -CreateShortcuts
+        } finally {
+            Set-Item -Path Function:\Install-EligibleUpdate -Value $savedInstall
+            Set-Item -Path Function:\Add-CraftShortcutsForProgram -Value $savedLinks
+            Set-Item -Path Function:\Get-VerifiedInstaller -Value $savedVerified
+        }
+        ($without -eq 0) -and ($script:LinkCalls.Count -eq 1) -and ($script:LinkCalls[0] -eq 'FigCraft') -and
+        ($last.Status -eq 'Installiert (neu) - nachgeprueft') -and ($last.Detail -like 'ExitCode 0; Verknüpfung - test')
+    }
+    Test-Case 'Shortcut: the window asks with a tick that is on by default and hands it over' {
+        ($UpdaterText -match '(?s)function Show-FreshInstallDialog.*?\$chkShortcuts\.Checked = \$true') -and
+        ($UpdaterText -match [regex]::Escape('& $endFreshOffer ([string[]]$picked) ([bool]$choice.Shortcuts)')) -and
+        ($UpdaterText -match '(?s)\$sync\.FreshShortcuts = \[bool\]\$shortcuts\s+\$sync\.FreshRequest = \$request') -and
+        ($UpdaterText -match [regex]::Escape('Invoke-FreshInstall $names -Approved -CreateShortcuts:$shortcuts'))
     }
 
     Test-Case 'Window: skipping hides the notice for this window too' {
