@@ -4,6 +4,7 @@
 
 - New: **shortcuts after a new installation.** The question before *Install new ...* has a tick *Create a shortcut on the desktop and in the Start menu* (on by default). After a confirmed new installation Craft Updater creates `<Program>.lnk` on your desktop and in your Start menu, pointing to the program file in its installation folder. Only inside *Program Files*; a place that already has a shortcut to the program (also for all users) is left alone, and an existing file with the same name is never replaced. A problem here is only noted, the installation stays successful.
 - New: **missing shortcuts after an update.** The update question in the window has a tick *Create missing shortcuts on the desktop and in the Start menu* (on by default). After a confirmed update, programs without a shortcut get one, with the same rules as above. Existing shortcuts are never touched. In the console (`-Konsole`) nothing changes.
+- Fixed: while new installations were offered, a double-click on an installed program (to see *What's new?*) put a tick on it that could not be removed. A double-click no longer changes ticks, and a tick on a program that is not offered is removed at once. It never caused an installation: only offered programs are installed.
 
 ## 5.9
 
